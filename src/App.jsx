@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -57,16 +58,20 @@ const GLOBAL_CSS = `
     --shadow-blood: 0 0 20px rgba(139,26,26,0.3);
   }
 
-  html, body, #root { height: 100%; }
+  html, body, #root { min-height: 100%; height: auto; }
+
+  html { background: #06060A; }
 
   body {
-    background: var(--bg-void);
+    background: #06060A;
     color: var(--cream);
     font-family: 'Inter', sans-serif;
     font-size: 15px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
   }
 
   /* Scrollbar */
@@ -359,6 +364,11 @@ const GLOBAL_CSS = `
   .toast-success { border-color: var(--success); color: var(--success-bright); background: rgba(45,106,79,0.2); }
   .toast-error { border-color: var(--blood); color: #FF6B6B; background: rgba(139,26,26,0.2); }
   .toast-gold { border-color: var(--gold-dim); color: var(--gold); background: rgba(201,168,76,0.1); }
+
+  /* Force background noir partout sur mobile */
+  .admin-page { background: var(--bg-void); min-height: 100vh; }
+  .app { background: var(--bg-void); min-height: 100vh; }
+  .admin-content { background: var(--bg-void); }
 `;
 
 // ============================================================
