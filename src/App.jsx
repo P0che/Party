@@ -1170,12 +1170,14 @@ function PlayerQuests({ player }) {
       .filter(Boolean);
 
   const requestValidation = async (questId) => {
-    const { error } = await supabase.from("quest_validations").insert({ player_id: player.id, quest_id: questId, status: "pending" });
-    if (error) {
-      show("Déjà envoyé ou erreur", "error");
+    const existing = validations.find(v => v.quest_id === questId);
+    if (existing) {
+      // Re-demande après refus : on remet en pending
+      const { error } = await supabase.from("quest_validations").update({ status: "pending" }).eq("id", existing.id);
+      if (error) { show("Erreur", "error"); } else { show("Nouvelle demande envoyée ✓", "success"); load(); }
     } else {
-      show("Demande envoyée ✓", "success");
-      load();
+      const { error } = await supabase.from("quest_validations").insert({ player_id: player.id, quest_id: questId, status: "pending" });
+      if (error) { show("Erreur", "error"); } else { show("Demande envoyée ✓", "success"); load(); }
     }
   };
 
@@ -1197,6 +1199,7 @@ function PlayerQuests({ player }) {
       {list.map(q => {
         const myStatus = getMyStatus(q.id);
         const validatedBy = getValidatedBy(q.id);
+        const alreadyTaken = validatedBy.length > 0; // quête prise par quelqu'un d'autre
         return (
           <div key={q.id} className="quest-card">
             <div style={{ flex: 1 }}>
@@ -1210,9 +1213,15 @@ function PlayerQuests({ player }) {
             </div>
             <div style={{ flexShrink: 0 }}>
               {myStatus === "approved" && <span className="badge badge-success">✅ Validée</span>}
-              {myStatus === "rejected" && <span className="badge badge-blood">✗ Refusée</span>}
+              {myStatus === "rejected" && !alreadyTaken && (
+                <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
+                  Re-demander
+                </button>
+              )}
+              {myStatus === "rejected" && alreadyTaken && <span className="badge badge-blood">✗ Refusée</span>}
               {myStatus === "pending" && <span className="badge badge-pending">⏳ En attente</span>}
-              {!myStatus && (
+              {!myStatus && alreadyTaken && <span className="badge badge-muted">🔒 Déjà prise</span>}
+              {!myStatus && !alreadyTaken && (
                 <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
                   Demander validation
                 </button>
