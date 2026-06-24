@@ -1109,6 +1109,13 @@ function AdminDashboard({ onLogout }) {
 // PLAYER - PROFILE TAB
 // ============================================================
 function PlayerProfile({ player }) {
+  const [descriptions, setDescriptions] = useState([]);
+
+  useEffect(() => {
+    supabase.from("character_descriptions").select("*").eq("user_id", player.id).order("ordre")
+      .then(({ data }) => setDescriptions(data || []));
+  }, [player.id]);
+
   return (
     <div className="fade-in">
       <div className="profile-hero">
@@ -1124,9 +1131,19 @@ function PlayerProfile({ player }) {
         </div>
       </div>
       {player.bio && (
-        <div className="card card-gold">
+        <div className="card card-gold" style={{ marginBottom: 12 }}>
           <div className="label">Biographie</div>
           <p style={{ color: "var(--cream-dim)", lineHeight: 1.7 }}>{stripHiddenMarkers(player.bio)}</p>
+        </div>
+      )}
+      {descriptions.length > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="label" style={{ marginBottom: 10 }}>Informations secrètes</div>
+          {descriptions.map((d, i) => (
+            <p key={i} style={{ color: "var(--cream-dim)", lineHeight: 1.7, marginBottom: 6, fontSize: 14 }}>
+              {stripHiddenMarkers(d.texte)}
+            </p>
+          ))}
         </div>
       )}
     </div>
@@ -1348,14 +1365,17 @@ function PlayerInvestigate({ player, allowSelf }) {
     }
   };
 
-  const renderField = (text, fieldType, targetId, label) => {
+  const renderField = (text, fieldType, targetId, label, isSelf = false) => {
     if (!text) return null;
     const hasHidden = hasHiddenWords(text);
     return (
       <div style={{ marginBottom: 10 }}>
         <div className="label">{label}</div>
         <div style={{ fontSize: 14, lineHeight: 1.8 }}>
-          {hasHidden ? (
+          {isSelf ? (
+            // Propre fiche : afficher le texte complet révélé
+            <span style={{ color: "var(--cream-dim)" }}>{stripHiddenMarkers(text)}</span>
+          ) : hasHidden ? (
             <InvestigateText
               text={text}
               fieldType={fieldType}
@@ -1385,27 +1405,35 @@ function PlayerInvestigate({ player, allowSelf }) {
       {players.map(p => {
         const descs = descriptions[p.id] || [];
         const isExpanded = expanded[p.id];
+        const isSelf = p.id === player.id;
         return (
           <div key={p.id} className="investigate-card">
             <div className="investigate-header" onClick={() => setExpanded(e => ({ ...e, [p.id]: !e[p.id] }))}>
               <Avatar url={p.photo} name={p.nom} size={44} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600 }}>
-                  <InvestigateText text={p.nom} fieldType="nom" targetPlayerId={p.id} investigatorId={player.id} discoveries={discoveries} onDiscover={handleDiscover} />
+                  {isSelf
+                    ? <span>{stripHiddenMarkers(p.nom)}</span>
+                    : <InvestigateText text={p.nom} fieldType="nom" targetPlayerId={p.id} investigatorId={player.id} discoveries={discoveries} onDiscover={handleDiscover} />
+                  }
                 </div>
                 {p.titre && (
                   <div style={{ fontSize: 13, color: "var(--gold)", marginTop: 2 }}>
-                    <InvestigateText text={p.titre} fieldType="titre" targetPlayerId={p.id} investigatorId={player.id} discoveries={discoveries} onDiscover={handleDiscover} />
+                    {isSelf
+                      ? <span>{stripHiddenMarkers(p.titre)}</span>
+                      : <InvestigateText text={p.titre} fieldType="titre" targetPlayerId={p.id} investigatorId={player.id} discoveries={discoveries} onDiscover={handleDiscover} />
+                    }
                   </div>
                 )}
+                {isSelf && <span style={{ fontSize: 11, color: "var(--gold-dim)", marginTop: 2, display: "block" }}>— Votre fiche —</span>}
               </div>
               <div style={{ color: "var(--muted)" }}>{isExpanded ? <Icons.ChevronUp /> : <Icons.ChevronDown />}</div>
             </div>
             {isExpanded && (
               <div className="investigate-body fade-in">
-                {renderField(p.surnom, "surnom", p.id, "Surnom")}
-                {renderField(p.bio, "bio", p.id, "Biographie")}
-                {descs.map((d, idx) => renderField(d.texte, `description_${idx}`, p.id, `Description ${idx + 1}`))}
+                {renderField(p.surnom, "surnom", p.id, "Surnom", isSelf)}
+                {renderField(p.bio, "bio", p.id, "Biographie", isSelf)}
+                {descs.map((d, idx) => renderField(d.texte, `description_${idx}`, p.id, `Description ${idx + 1}`, isSelf))}
               </div>
             )}
           </div>
