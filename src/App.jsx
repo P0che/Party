@@ -1233,13 +1233,15 @@ function PlayerQuests({ player }) {
               <div style={{ flexShrink: 0 }}>
                 {myStatus === "approved" && <span className="badge badge-success">✅ Validée</span>}
                 {myStatus === "pending" && <span className="badge badge-pending">⏳ En attente</span>}
-                {myStatus === "rejected" && (
+                {myStatus === "rejected" && !isPersonal && takenByOther && (
+                  <span className="badge badge-muted">🔒 Déjà validée</span>
+                )}
+                {myStatus === "rejected" && (isPersonal || !takenByOther) && (
                   <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
                     Re-demander
                   </button>
                 )}
                 {!myStatus && !isPersonal && takenByOther && (
-                  // Quête globale déjà prise → bouton bloqué
                   <span className="badge badge-muted">🔒 Déjà validée</span>
                 )}
                 {!myStatus && (!takenByOther || isPersonal) && (
