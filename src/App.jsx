@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -226,13 +227,13 @@ const GLOBAL_CSS = `
   /* Modal */
   .modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.8);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 200; padding: 20px;
+    display: flex; align-items: flex-start; justify-content: center;
+    z-index: 200; padding: 16px; overflow-y: auto;
   }
   .modal {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--r-lg); padding: 24px; max-width: 500px;
-    width: 100%; max-height: 90vh; overflow-y: auto;
+    width: 100%; margin: auto;
     box-shadow: var(--shadow);
     animation: fadeIn 0.2s ease;
   }
