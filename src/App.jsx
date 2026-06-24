@@ -523,16 +523,19 @@ function InvestigateText({ text, fieldType, targetPlayerId, investigatorId, disc
         if (discovered) {
           return <span key={i} className="revealed-word">{part.value}</span>;
         }
+        const letters = part.value.length;
+        const placeholder = Array.from({ length: letters }, () => "_").join(" ");
+        const inputWidth = Math.max(60, letters * 12 + 16);
         return (
           <input
             key={i}
             className={`hidden-input ${shaking[part.index] ? "error" : ""}`}
-            placeholder="_ _ _ _"
+            placeholder={placeholder}
             value={inputValues[part.index] || ""}
             onChange={e => setInputValues(v => ({ ...v, [part.index]: e.target.value }))}
             onKeyDown={e => e.key === "Enter" && handleSubmit(part.index, part.value)}
             onBlur={() => handleSubmit(part.index, part.value)}
-            style={{ borderColor: errors[part.index] ? "var(--danger-bright)" : undefined }}
+            style={{ borderColor: errors[part.index] ? "var(--danger-bright)" : undefined, width: inputWidth }}
           />
         );
       })}
@@ -660,12 +663,13 @@ function PlayerForm({ player, onSave, onClose }) {
 // ============================================================
 // QUEST FORM
 // ============================================================
-function QuestForm({ quest, onSave, onClose }) {
+function QuestForm({ quest, players, onSave, onClose }) {
   const [form, setForm] = useState({
     titre: quest?.titre || "",
     description: quest?.description || "",
     type: quest?.type || "secondaire",
     active: quest?.active ?? true,
+    player_id: quest?.player_id || null,
   });
   const [loading, setLoading] = useState(false);
   const { show, ToastEl } = useToast();
@@ -676,10 +680,11 @@ function QuestForm({ quest, onSave, onClose }) {
     if (!form.titre.trim()) { show("Le titre est requis", "error"); return; }
     setLoading(true);
     try {
+      const payload = { ...form, player_id: form.player_id || null };
       if (quest?.id) {
-        await supabase.from("quests").update(form).eq("id", quest.id);
+        await supabase.from("quests").update(payload).eq("id", quest.id);
       } else {
-        await supabase.from("quests").insert(form);
+        await supabase.from("quests").insert(payload);
       }
       onSave();
     } catch (e) {
@@ -715,6 +720,15 @@ function QuestForm({ quest, onSave, onClose }) {
           </label>
           <span style={{ fontSize: 13 }}>Active</span>
         </div>
+      </div>
+      <div className="form-group">
+        <label className="label">Assigner à un joueur <span style={{ color: "var(--muted)", fontSize: 11 }}>(optionnel — laisser vide = visible par tous)</span></label>
+        <select className="input" value={form.player_id || ""} onChange={e => set("player_id", e.target.value || null)}>
+          <option value="">— Visible par tous les joueurs —</option>
+          {players.map(p => (
+            <option key={p.id} value={p.id}>{p.nom}</option>
+          ))}
+        </select>
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
         <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
@@ -788,11 +802,11 @@ function AdminPlayers({ toast }) {
                     <td style={{ color: "var(--cream-dim)", fontSize: 13 }}>{p.titre ? stripHiddenMarkers(p.titre) : "—"}</td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setModal({ type: "edit", player: p })} title="Modifier">
-                          <Icons.Edit />
+                        <button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "edit", player: p })}>
+                          <Icons.Edit /> Modifier
                         </button>
-                        <button className="btn btn-danger btn-sm btn-icon" onClick={() => deletePlayer(p.id)} title="Supprimer">
-                          <Icons.Trash />
+                        <button className="btn btn-danger btn-sm" onClick={() => deletePlayer(p.id)}>
+                          <Icons.Trash /> Supprimer
                         </button>
                       </div>
                     </td>
@@ -818,13 +832,18 @@ function AdminPlayers({ toast }) {
 // ============================================================
 function AdminQuests({ toast }) {
   const [quests, setQuests] = useState([]);
+  const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("quests").select("*").order("created_at", { ascending: false });
-    setQuests(data || []);
+    const [{ data: q }, { data: ps }] = await Promise.all([
+      supabase.from("quests").select("*, users(nom)").order("created_at", { ascending: false }),
+      supabase.from("users").select("id, nom").order("nom"),
+    ]);
+    setQuests(q || []);
+    setPlayers(ps || []);
     setLoading(false);
   }, []);
 
@@ -858,6 +877,7 @@ function AdminQuests({ toast }) {
                 <tr>
                   <th>Quête</th>
                   <th>Type</th>
+                  <th>Assignée à</th>
                   <th>Statut</th>
                   <th>Actions</th>
                 </tr>
@@ -874,6 +894,9 @@ function AdminQuests({ toast }) {
                         {q.type === "principale" ? "⚔ Principale" : "📜 Secondaire"}
                       </span>
                     </td>
+                    <td style={{ fontSize: 13, color: q.player_id ? "var(--gold)" : "var(--muted)" }}>
+                      {q.users?.nom || "Tous"}
+                    </td>
                     <td>
                       <label className="toggle" style={{ display: "inline-block" }}>
                         <input type="checkbox" checked={q.active} onChange={() => toggle(q)} />
@@ -882,8 +905,8 @@ function AdminQuests({ toast }) {
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setModal({ type: "edit", quest: q })}><Icons.Edit /></button>
-                        <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteQuest(q.id)}><Icons.Trash /></button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "edit", quest: q })}><Icons.Edit /> Modifier</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => deleteQuest(q.id)}><Icons.Trash /> Supprimer</button>
                       </div>
                     </td>
                   </tr>
@@ -896,7 +919,7 @@ function AdminQuests({ toast }) {
       )}
       {modal && (
         <Modal title={modal.type === "add" ? "Nouvelle quête" : "Modifier la quête"} onClose={() => setModal(null)}>
-          <QuestForm quest={modal.quest} onSave={() => { setModal(null); load(); toast.show("Quête enregistrée ✓", "success"); }} onClose={() => setModal(null)} />
+          <QuestForm quest={modal.quest} players={players} onSave={() => { setModal(null); load(); toast.show("Quête enregistrée ✓", "success"); }} onClose={() => setModal(null)} />
         </Modal>
       )}
     </div>
@@ -1061,7 +1084,7 @@ function AdminDashboard({ onLogout }) {
           <span className="cinzel" style={{ color: "var(--gold)", fontSize: 16, fontWeight: 700 }}>Murder Party</span>
           <span className="badge badge-blood" style={{ fontSize: 11 }}>Admin</span>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={onLogout}><Icons.Logout /> Déconnexion</button>
+        <button className="btn btn-ghost btn-sm" onClick={onLogout}><Icons.Logout /> Se déconnecter</button>
       </div>
       <div style={{ background: "var(--bg-deep)", borderBottom: "1px solid var(--border)", padding: "8px 20px" }}>
         <div className="admin-tabs">
@@ -1116,22 +1139,34 @@ function PlayerProfile({ player }) {
 function PlayerQuests({ player }) {
   const [quests, setQuests] = useState([]);
   const [validations, setValidations] = useState([]);
+  const [allValidations, setAllValidations] = useState([]);
   const [loading, setLoading] = useState(true);
   const { show, ToastEl } = useToast();
 
   const load = useCallback(async () => {
-    const [{ data: q }, { data: v }] = await Promise.all([
-      supabase.from("quests").select("*").eq("active", true).order("type"),
+    const [{ data: q }, { data: v }, { data: allV }] = await Promise.all([
+      supabase.from("quests").select("*, users(nom)").eq("active", true).order("type"),
       supabase.from("quest_validations").select("*").eq("player_id", player.id),
+      supabase.from("quest_validations").select("*, users(nom)").eq("status", "approved"),
     ]);
-    setQuests(q || []);
+    // Filter quests: show if no player_id (global) OR player_id matches current player
+    const visible = (q || []).filter(quest => !quest.player_id || quest.player_id === player.id);
+    setQuests(visible);
     setValidations(v || []);
+    setAllValidations(allV || []);
     setLoading(false);
   }, [player.id]);
 
   useEffect(() => { load(); }, [load]);
 
-  const getStatus = (questId) => validations.find(v => v.quest_id === questId)?.status || null;
+  const getMyStatus = (questId) => validations.find(v => v.quest_id === questId)?.status || null;
+
+  // Get list of other players who validated this quest
+  const getValidatedBy = (questId) =>
+    allValidations
+      .filter(v => v.quest_id === questId && v.player_id !== player.id)
+      .map(v => v.users?.nom)
+      .filter(Boolean);
 
   const requestValidation = async (questId) => {
     const { error } = await supabase.from("quest_validations").insert({ player_id: player.id, quest_id: questId, status: "pending" });
@@ -1145,7 +1180,10 @@ function PlayerQuests({ player }) {
 
   if (loading) return <div className="loading">Chargement...</div>;
 
+  // Separate: global quests (principale) visible to all, personal quests (secondaire) only if player has a validation entry
   const principales = quests.filter(q => q.type === "principale");
+  // Secondaires : only show if the player has an entry (pending/approved/rejected) OR it's a global quest with no player_id restriction
+  // Since quests don't have player_id, show all secondaires but note who completed them
   const secondaires = quests.filter(q => q.type === "secondaire");
 
   const QuestList = ({ list, label }) => (
@@ -1156,20 +1194,26 @@ function PlayerQuests({ player }) {
       </div>
       {list.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>Aucune quête disponible</p>}
       {list.map(q => {
-        const status = getStatus(q.id);
+        const myStatus = getMyStatus(q.id);
+        const validatedBy = getValidatedBy(q.id);
         return (
           <div key={q.id} className="quest-card">
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>{q.titre}</div>
-              {q.description && <div style={{ fontSize: 13, color: "var(--cream-dim)" }}>{q.description}</div>}
+              {q.description && <div style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 6 }}>{q.description}</div>}
+              {validatedBy.length > 0 && (
+                <div style={{ fontSize: 12, color: "var(--success-bright)" }}>
+                  ✅ Validée par : {validatedBy.join(", ")}
+                </div>
+              )}
             </div>
             <div style={{ flexShrink: 0 }}>
-              {status === "approved" && <span className="badge badge-success">✅ Validée</span>}
-              {status === "rejected" && <span className="badge badge-blood">✗ Refusée</span>}
-              {status === "pending" && <span className="badge badge-pending">⏳ En attente</span>}
-              {!status && (
+              {myStatus === "approved" && <span className="badge badge-success">✅ Validée</span>}
+              {myStatus === "rejected" && <span className="badge badge-blood">✗ Refusée</span>}
+              {myStatus === "pending" && <span className="badge badge-pending">⏳ En attente</span>}
+              {!myStatus && (
                 <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
-                  Valider
+                  Demander validation
                 </button>
               )}
             </div>
@@ -1393,7 +1437,7 @@ function PlayerDashboard({ player: initialPlayer, onLogout }) {
           <span className="cinzel title-flicker" style={{ color: "var(--gold)", fontSize: 18, fontWeight: 700 }}>☠ Murder Party</span>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="badge badge-gold">⚔ {player.points}</span>
-            <button className="btn btn-ghost btn-sm btn-icon" onClick={onLogout} title="Déconnexion"><Icons.Logout /></button>
+            <button className="btn btn-ghost btn-sm" onClick={onLogout} title="Déconnexion"><Icons.Logout /> Quitter</button>
           </div>
         </div>
         {tab === "profile" && <PlayerProfile player={player} />}
