@@ -17,7 +17,6 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -1183,55 +1182,61 @@ function PlayerQuests({ player }) {
 
   if (loading) return <div className="loading">Chargement...</div>;
 
-  // Separate: global quests (principale) visible to all, personal quests (secondaire) only if player has a validation entry
   const principales = quests.filter(q => q.type === "principale");
-  // Secondaires : only show if the player has an entry (pending/approved/rejected) OR it's a global quest with no player_id restriction
-  // Since quests don't have player_id, show all secondaires but note who completed them
   const secondaires = quests.filter(q => q.type === "secondaire");
 
-  const QuestList = ({ list, label }) => (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span className="cinzel" style={{ color: "var(--gold)", fontSize: 15 }}>{label}</span>
-        <span className="badge badge-muted">{list.length}</span>
+  const QuestList = ({ list, label }) => {
+    return (
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span className="cinzel" style={{ color: "var(--gold)", fontSize: 15 }}>{label}</span>
+          <span className="badge badge-muted">{list.length}</span>
+        </div>
+        {list.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>Aucune quête disponible</p>}
+        {list.map(q => {
+          const myStatus = getMyStatus(q.id);
+          const isPersonal = !!q.player_id; // quête assignée à un joueur précis
+          const validatedBy = getValidatedBy(q.id); // autres joueurs qui ont validé
+          const takenByOther = validatedBy.length > 0;
+
+          // Quête globale validée par quelqu'un : afficher "Validée par X", bloquer le bouton
+          // Quête personnelle : seul le joueur assigné la voit (déjà filtré dans `quests`)
+
+          return (
+            <div key={q.id} className="quest-card">
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{q.titre}</div>
+                {q.description && <div style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 6 }}>{q.description}</div>}
+                {!isPersonal && takenByOther && (
+                  <div style={{ fontSize: 12, color: "var(--success-bright)" }}>
+                    ✅ Validée par : {validatedBy.join(", ")}
+                  </div>
+                )}
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                {myStatus === "approved" && <span className="badge badge-success">✅ Validée</span>}
+                {myStatus === "pending" && <span className="badge badge-pending">⏳ En attente</span>}
+                {myStatus === "rejected" && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
+                    Re-demander
+                  </button>
+                )}
+                {!myStatus && !isPersonal && takenByOther && (
+                  // Quête globale déjà prise → bouton bloqué
+                  <span className="badge badge-muted">🔒 Déjà validée</span>
+                )}
+                {!myStatus && (!takenByOther || isPersonal) && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
+                    Demander validation
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-      {list.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>Aucune quête disponible</p>}
-      {list.map(q => {
-        const myStatus = getMyStatus(q.id);
-        const validatedBy = getValidatedBy(q.id);
-        const alreadyTaken = validatedBy.length > 0; // quête prise par quelqu'un d'autre
-        return (
-          <div key={q.id} className="quest-card">
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>{q.titre}</div>
-              {q.description && <div style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 6 }}>{q.description}</div>}
-              {validatedBy.length > 0 && (
-                <div style={{ fontSize: 12, color: "var(--success-bright)" }}>
-                  ✅ Validée par : {validatedBy.join(", ")}
-                </div>
-              )}
-            </div>
-            <div style={{ flexShrink: 0 }}>
-              {myStatus === "approved" && <span className="badge badge-success">✅ Validée</span>}
-              {myStatus === "rejected" && !alreadyTaken && (
-                <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
-                  Re-demander
-                </button>
-              )}
-              {myStatus === "rejected" && alreadyTaken && <span className="badge badge-blood">✗ Refusée</span>}
-              {myStatus === "pending" && <span className="badge badge-pending">⏳ En attente</span>}
-              {!myStatus && alreadyTaken && <span className="badge badge-muted">🔒 Déjà prise</span>}
-              {!myStatus && !alreadyTaken && (
-                <button className="btn btn-ghost btn-sm" onClick={() => requestValidation(q.id)}>
-                  Demander validation
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="fade-in">
