@@ -407,6 +407,10 @@ const Icons = {
   EyeOff: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
   Settings: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
   Sword: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg>,
+  Lock: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+  Unlock: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>,
+  FileText: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+  Key: () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>,
 };
 
 // ============================================================
@@ -1082,6 +1086,7 @@ function AdminDashboard({ onLogout }) {
     { id: "players", label: "Joueurs", icon: <Icons.Users /> },
     { id: "quests", label: "Quêtes", icon: <Icons.Scroll /> },
     { id: "validations", label: "Validations", icon: <Icons.Check /> },
+    { id: "coffres", label: "Coffres", icon: <Icons.Lock /> },
     { id: "settings", label: "Réglages", icon: <Icons.Settings /> },
   ];
 
@@ -1109,6 +1114,7 @@ function AdminDashboard({ onLogout }) {
         {tab === "players" && <AdminPlayers toast={toast} />}
         {tab === "quests" && <AdminQuests toast={toast} />}
         {tab === "validations" && <AdminValidations toast={toast} />}
+        {tab === "coffres" && <AdminCoffres toast={toast} />}
         {tab === "settings" && <AdminSettings toast={toast} />}
       </div>
     </div>
@@ -1461,8 +1467,506 @@ function PlayerInvestigate({ player, allowSelf }) {
 }
 
 // ============================================================
-// PLAYER DASHBOARD
+// COFFRE PERSONNEL (Player)
 // ============================================================
+function CoffrePersonnel({ player }) {
+  const [locked, setLocked] = useState(true);
+  const [codeInput, setCodeInput] = useState("");
+  const [error, setError] = useState("");
+  const [indices, setIndices] = useState([]);
+  const [receptions, setReceptions] = useState([]);
+  const [coffreCode, setCoffreCode] = useState(player.coffre_code || null);
+  const [showSetCode, setShowSetCode] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const { show, ToastEl } = useToast();
+
+  const unlock = async () => {
+    if (!coffreCode) { setError("Aucun code défini. Allez dans Paramètres pour en créer un."); return; }
+    if (codeInput === coffreCode) {
+      // Load data
+      const [{ data: ind }, { data: rec }] = await Promise.all([
+        supabase.from("coffre_indices").select("*").eq("player_id", player.id).order("created_at"),
+        supabase.from("coffre_receptions").select("*, coffre_documents(titre, contenu)").eq("player_id", player.id).order("received_at"),
+      ]);
+      setIndices(ind || []);
+      setReceptions(rec || []);
+      setLocked(false);
+      setError("");
+    } else {
+      setError("Code incorrect");
+    }
+  };
+
+  if (!coffreCode && !showSetCode) {
+    return (
+      <div className="fade-in">
+        {ToastEl}
+        <div className="card card-gold" style={{ textAlign: "center", padding: 32 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
+          <div className="cinzel gold" style={{ fontSize: 18, marginBottom: 8 }}>Coffre Personnel</div>
+          <p style={{ color: "var(--cream-dim)", fontSize: 13, marginBottom: 20 }}>Vous n'avez pas encore de code. Définissez-en un dans <strong>Paramètres</strong>.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <div className="fade-in">
+        {ToastEl}
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>🔐</div>
+          <div className="cinzel gold" style={{ fontSize: 20, marginBottom: 4 }}>Coffre Personnel</div>
+          <p style={{ color: "var(--cream-dim)", fontSize: 13 }}>Entrez votre code secret pour l'ouvrir</p>
+        </div>
+        <div className="card card-glow" style={{ maxWidth: 320, margin: "0 auto", padding: 24 }}>
+          <input
+            className="input input-lg"
+            type="text"
+            placeholder="Votre code"
+            value={codeInput}
+            onChange={e => { setCodeInput(e.target.value); setError(""); }}
+            onKeyDown={e => e.key === "Enter" && unlock()}
+            autoFocus
+            style={{ marginBottom: 12, letterSpacing: 4 }}
+          />
+          {error && <div className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>}
+          <button className="btn btn-primary" style={{ width: "100%" }} onClick={unlock}>
+            <Icons.Unlock /> Ouvrir le coffre
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fade-in">
+      {ToastEl}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div className="cinzel gold" style={{ fontSize: 18 }}>🔓 Coffre ouvert</div>
+        <button className="btn btn-ghost btn-sm" onClick={() => { setLocked(true); setCodeInput(""); }}>
+          <Icons.Lock /> Verrouiller
+        </button>
+      </div>
+
+      {/* Rôle */}
+      {player.role_murder && (
+        <div className="card card-glow" style={{ marginBottom: 16 }}>
+          <div className="label" style={{ marginBottom: 8 }}>⚔ Votre Rôle</div>
+          <p style={{ color: "var(--cream)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{player.role_murder}</p>
+        </div>
+      )}
+
+      {/* Indices admin */}
+      {indices.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="label" style={{ marginBottom: 10 }}>📜 Indices reçus</div>
+          {indices.map((ind, i) => (
+            <div key={ind.id} style={{ borderLeft: "2px solid var(--blood)", paddingLeft: 12, marginBottom: 12 }}>
+              <p style={{ color: "var(--cream-dim)", fontSize: 14, lineHeight: 1.7 }}>{ind.contenu}</p>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{new Date(ind.created_at).toLocaleString("fr-FR")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Documents reçus des coffres globaux */}
+      {receptions.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="label" style={{ marginBottom: 10 }}>📁 Documents découverts</div>
+          {receptions.map(r => (
+            <div key={r.id} style={{ borderLeft: "2px solid var(--gold-dim)", paddingLeft: 12, marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, color: "var(--gold)", fontSize: 14, marginBottom: 4 }}>{r.coffre_documents?.titre}</div>
+              <p style={{ color: "var(--cream-dim)", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.coffre_documents?.contenu}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {indices.length === 0 && receptions.length === 0 && !player.role_murder && (
+        <div className="empty-state"><div className="icon">📭</div><p>Votre coffre est vide pour l'instant</p></div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// COFFRES GLOBAUX (Player)
+// ============================================================
+function CoffresGlobaux({ player }) {
+  const [coffres, setCoffres] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [inputs, setInputs] = useState({});
+  const [errors, setErrors] = useState({});
+  const [opened, setOpened] = useState({});
+  const { show, ToastEl } = useToast();
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("coffres_globaux").select("*").order("created_at");
+    setCoffres(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const tryOpen = async (coffre) => {
+    const input = (inputs[coffre.id] || "").trim();
+    if (input !== coffre.code_8) {
+      setErrors(e => ({ ...e, [coffre.id]: "Code incorrect" }));
+      return;
+    }
+    setErrors(e => ({ ...e, [coffre.id]: "" }));
+    // Load documents
+    const { data: docs } = await supabase.from("coffre_documents").select("*").eq("coffre_id", coffre.id).order("ordre");
+    if (!docs || docs.length === 0) { show("Coffre vide !", "error"); return; }
+    // Insert receptions (ignore duplicates)
+    for (const doc of docs) {
+      await supabase.from("coffre_receptions").upsert({ player_id: player.id, coffre_id: coffre.id, document_id: doc.id }, { onConflict: "player_id,document_id" });
+    }
+    setOpened(o => ({ ...o, [coffre.id]: docs }));
+    show(`${docs.length} document(s) ajouté(s) à votre coffre ! 🎉`, "gold");
+  };
+
+  if (loading) return <div className="loading">Chargement...</div>;
+
+  return (
+    <div className="fade-in">
+      {ToastEl}
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🗄️</div>
+        <div className="cinzel gold" style={{ fontSize: 20, marginBottom: 4 }}>Coffres Secrets</div>
+        <p style={{ color: "var(--cream-dim)", fontSize: 13 }}>Entrez le code à 8 caractères pour ouvrir un coffre</p>
+      </div>
+      {coffres.length === 0 && <div className="empty-state"><div className="icon">🗄️</div><p>Aucun coffre disponible</p></div>}
+      {coffres.map(c => (
+        <div key={c.id} className={`card ${opened[c.id] ? "card-gold" : ""}`} style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <span style={{ fontSize: 28 }}>{opened[c.id] ? "🔓" : "🔒"}</span>
+            <div className="cinzel" style={{ fontSize: 16, color: opened[c.id] ? "var(--gold)" : "var(--cream)" }}>{c.nom}</div>
+          </div>
+          {opened[c.id] ? (
+            <div>
+              <div style={{ fontSize: 12, color: "var(--success-bright)", marginBottom: 10 }}>✅ Documents ajoutés à votre coffre personnel</div>
+              {opened[c.id].map(doc => (
+                <div key={doc.id} style={{ borderLeft: "2px solid var(--gold-dim)", paddingLeft: 12, marginBottom: 10 }}>
+                  <div style={{ fontWeight: 600, color: "var(--gold)", fontSize: 13 }}>{doc.titre}</div>
+                  <p style={{ color: "var(--cream-dim)", fontSize: 12, marginTop: 3 }}>{doc.contenu}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <input
+                className="input"
+                placeholder="Code à 8 caractères"
+                value={inputs[c.id] || ""}
+                onChange={e => setInputs(i => ({ ...i, [c.id]: e.target.value }))}
+                onKeyDown={e => e.key === "Enter" && tryOpen(c)}
+                style={{ marginBottom: 8 }}
+              />
+              {errors[c.id] && <div className="alert alert-error" style={{ marginBottom: 8 }}>{errors[c.id]}</div>}
+              <button className="btn btn-ghost btn-sm" onClick={() => tryOpen(c)}>
+                <Icons.Unlock /> Ouvrir
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// PLAYER SETTINGS
+// ============================================================
+function PlayerSettings({ player }) {
+  const [newCode, setNewCode] = useState("");
+  const [confirmCode, setConfirmCode] = useState("");
+  const [pending, setPending] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { show, ToastEl } = useToast();
+
+  useEffect(() => {
+    supabase.from("coffre_code_requests").select("*").eq("player_id", player.id).eq("status", "pending").limit(1).single()
+      .then(({ data }) => setPending(!!data));
+  }, [player.id]);
+
+  const submitRequest = async () => {
+    if (!newCode.trim()) { show("Entrez un code", "error"); return; }
+    if (newCode !== confirmCode) { show("Les codes ne correspondent pas", "error"); return; }
+    setLoading(true);
+    // Store new code directly (admin can reset later)
+    await supabase.from("users").update({ coffre_code: newCode }).eq("id", player.id);
+    setNewCode(""); setConfirmCode("");
+    show("Code de coffre mis à jour ✓", "success");
+    setLoading(false);
+  };
+
+  return (
+    <div className="fade-in">
+      {ToastEl}
+      <div className="cinzel gold" style={{ fontSize: 18, marginBottom: 20 }}>⚙ Paramètres</div>
+      <div className="card card-gold">
+        <div className="label" style={{ marginBottom: 4 }}>🔐 Code du coffre personnel</div>
+        <p style={{ color: "var(--cream-dim)", fontSize: 13, marginBottom: 16 }}>
+          {player.coffre_code ? "Modifier votre code secret." : "Définissez votre code secret pour accéder à votre coffre."}
+        </p>
+        <div className="form-group">
+          <label className="label">Nouveau code</label>
+          <input className="input" type="text" placeholder="Choisissez un code" value={newCode} onChange={e => setNewCode(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="label">Confirmer le code</label>
+          <input className="input" type="text" placeholder="Répétez le code" value={confirmCode} onChange={e => setConfirmCode(e.target.value)} />
+        </div>
+        <button className="btn btn-gold" onClick={submitRequest} disabled={loading}>
+          <Icons.Key /> {player.coffre_code ? "Modifier le code" : "Définir le code"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ADMIN - COFFRES TAB
+// ============================================================
+function AdminCoffres({ toast }) {
+  const [coffres, setCoffres] = useState([]);
+  const [players, setPlayers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState({});
+  const [docs, setDocs] = useState({});
+  const [modal, setModal] = useState(null);
+  const [docModal, setDocModal] = useState(null);
+  const [indiceModal, setIndiceModal] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [{ data: c }, { data: ps }] = await Promise.all([
+      supabase.from("coffres_globaux").select("*").order("created_at"),
+      supabase.from("users").select("id, nom, coffre_code, role_murder").order("nom"),
+    ]);
+    setCoffres(c || []);
+    setPlayers(ps || []);
+    setLoading(false);
+  }, []);
+
+  const loadDocs = async (coffreId) => {
+    const { data } = await supabase.from("coffre_documents").select("*").eq("coffre_id", coffreId).order("ordre");
+    setDocs(d => ({ ...d, [coffreId]: data || [] }));
+  };
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleCoffre = (id) => {
+    const newVal = !expanded[id];
+    setExpanded(e => ({ ...e, [id]: newVal }));
+    if (newVal) loadDocs(id);
+  };
+
+  const saveCoffre = async (form, id) => {
+    if (id) { await supabase.from("coffres_globaux").update(form).eq("id", id); }
+    else { await supabase.from("coffres_globaux").insert(form); }
+    load(); setModal(null); toast.show("Coffre enregistré ✓", "success");
+  };
+
+  const deleteCoffre = async (id) => {
+    if (!confirm("Supprimer ce coffre ?")) return;
+    await supabase.from("coffres_globaux").delete().eq("id", id);
+    load(); toast.show("Coffre supprimé", "success");
+  };
+
+  const saveDoc = async (form, coffreId, docId) => {
+    if (docId) { await supabase.from("coffre_documents").update(form).eq("id", docId); }
+    else { await supabase.from("coffre_documents").insert({ ...form, coffre_id: coffreId }); }
+    loadDocs(coffreId); setDocModal(null); toast.show("Document enregistré ✓", "success");
+  };
+
+  const deleteDoc = async (docId, coffreId) => {
+    if (!confirm("Supprimer ce document ?")) return;
+    await supabase.from("coffre_documents").delete().eq("id", docId);
+    loadDocs(coffreId); toast.show("Document supprimé", "success");
+  };
+
+  const saveIndice = async (playerId, contenu) => {
+    if (!contenu.trim()) return;
+    await supabase.from("coffre_indices").insert({ player_id: playerId, contenu });
+    setIndiceModal(null); toast.show("Indice ajouté ✓", "success");
+  };
+
+  const resetCoffreCode = async (playerId) => {
+    if (!confirm("Réinitialiser le code de ce joueur ?")) return;
+    await supabase.from("users").update({ coffre_code: null }).eq("id", playerId);
+    load(); toast.show("Code réinitialisé", "success");
+  };
+
+  if (loading) return <div className="loading">Chargement...</div>;
+
+  return (
+    <div>
+      {/* Coffres personnels */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <h2 className="cinzel" style={{ color: "var(--gold)", fontSize: 18 }}>Coffres Personnels</h2>
+      </div>
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="table-wrapper">
+          <table>
+            <thead><tr><th>Joueur</th><th>Code coffre</th><th>Rôle</th><th>Actions</th></tr></thead>
+            <tbody>
+              {players.map(p => (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 500 }}>{p.nom}</td>
+                  <td><span className="badge badge-muted">{p.coffre_code || "—"}</span></td>
+                  <td style={{ fontSize: 12, color: "var(--cream-dim)", maxWidth: 160 }}>{p.role_murder ? p.role_murder.slice(0, 40) + (p.role_murder.length > 40 ? "…" : "") : "—"}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setIndiceModal({ player: p, type: "indice" })}><Icons.Plus /> Indice</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setIndiceModal({ player: p, type: "role" })}><Icons.Edit /> Rôle</button>
+                      {p.coffre_code && <button className="btn btn-danger btn-sm" onClick={() => resetCoffreCode(p.id)}><Icons.Key /> Reset code</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Coffres globaux */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <h2 className="cinzel" style={{ color: "var(--gold)", fontSize: 18 }}>Coffres Globaux</h2>
+        <button className="btn btn-primary" onClick={() => setModal({ coffre: null })}>
+          <Icons.Plus /> Nouveau coffre
+        </button>
+      </div>
+      {coffres.map(c => (
+        <div key={c.id} className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }} onClick={() => toggleCoffre(c.id)}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 24 }}>🔒</span>
+              <div>
+                <div style={{ fontWeight: 600 }}>{c.nom}</div>
+                <div style={{ fontSize: 12, color: "var(--cream-dim)" }}>Code : <span style={{ color: "var(--gold)", fontFamily: "monospace" }}>{c.code_8}</span></div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setModal({ coffre: c })}><Icons.Edit /> Modifier</button>
+              <button className="btn btn-danger btn-sm" onClick={() => deleteCoffre(c.id)}><Icons.Trash /> Supprimer</button>
+            </div>
+          </div>
+          {expanded[c.id] && (
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span className="label" style={{ margin: 0 }}>Documents ({(docs[c.id] || []).length})</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => setDocModal({ coffreId: c.id, doc: null })}><Icons.Plus /> Ajouter</button>
+              </div>
+              {(docs[c.id] || []).map(doc => (
+                <div key={doc.id} style={{ background: "var(--bg-deep)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--gold)", marginBottom: 3 }}>{doc.titre}</div>
+                    <div style={{ fontSize: 12, color: "var(--cream-dim)", whiteSpace: "pre-wrap" }}>{doc.contenu.slice(0, 80)}{doc.contenu.length > 80 ? "…" : ""}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setDocModal({ coffreId: c.id, doc })}><Icons.Edit /></button>
+                    <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteDoc(doc.id, c.id)}><Icons.Trash /></button>
+                  </div>
+                </div>
+              ))}
+              {(docs[c.id] || []).length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>Aucun document dans ce coffre</p>}
+            </div>
+          )}
+        </div>
+      ))}
+      {coffres.length === 0 && <div className="empty-state"><div className="icon">🗄️</div><p>Aucun coffre créé</p></div>}
+
+      {/* Modal coffre */}
+      {modal && (
+        <Modal title={modal.coffre ? "Modifier le coffre" : "Nouveau coffre"} onClose={() => setModal(null)}>
+          <CoffreForm coffre={modal.coffre} onSave={(f) => saveCoffre(f, modal.coffre?.id)} onClose={() => setModal(null)} />
+        </Modal>
+      )}
+
+      {/* Modal document */}
+      {docModal && (
+        <Modal title={docModal.doc ? "Modifier le document" : "Nouveau document"} onClose={() => setDocModal(null)}>
+          <DocForm doc={docModal.doc} onSave={(f) => saveDoc(f, docModal.coffreId, docModal.doc?.id)} onClose={() => setDocModal(null)} />
+        </Modal>
+      )}
+
+      {/* Modal indice / rôle */}
+      {indiceModal && (
+        <Modal title={indiceModal.type === "role" ? `Rôle de ${indiceModal.player.nom}` : `Indice pour ${indiceModal.player.nom}`} onClose={() => setIndiceModal(null)}>
+          {indiceModal.type === "role" ? (
+            <RoleForm player={indiceModal.player} onSave={async (role) => {
+              await supabase.from("users").update({ role_murder: role }).eq("id", indiceModal.player.id);
+              load(); setIndiceModal(null); toast.show("Rôle enregistré ✓", "success");
+            }} onClose={() => setIndiceModal(null)} />
+          ) : (
+            <IndiceForm onSave={(contenu) => saveIndice(indiceModal.player.id, contenu)} onClose={() => setIndiceModal(null)} />
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function CoffreForm({ coffre, onSave, onClose }) {
+  const [nom, setNom] = useState(coffre?.nom || "");
+  const [code, setCode] = useState(coffre?.code_8 || "");
+  const { show, ToastEl } = useToast();
+  const save = () => {
+    if (!nom.trim() || !code.trim()) { show("Nom et code requis", "error"); return; }
+    onSave({ nom, code_8: code });
+  };
+  return (
+    <>
+      {ToastEl}
+      <div className="form-group"><label className="label">Nom du coffre</label><input className="input" value={nom} onChange={e => setNom(e.target.value)} placeholder="Ex: Coffre de la crypte" /></div>
+      <div className="form-group"><label className="label">Code (8 caractères)</label><input className="input" value={code} onChange={e => setCode(e.target.value)} placeholder="Ex: MORT1234" maxLength={20} /></div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save}>Enregistrer</button></div>
+    </>
+  );
+}
+
+function DocForm({ doc, onSave, onClose }) {
+  const [titre, setTitre] = useState(doc?.titre || "");
+  const [contenu, setContenu] = useState(doc?.contenu || "");
+  const { show, ToastEl } = useToast();
+  const save = () => {
+    if (!titre.trim()) { show("Titre requis", "error"); return; }
+    onSave({ titre, contenu, ordre: doc?.ordre || 0 });
+  };
+  return (
+    <>
+      {ToastEl}
+      <div className="form-group"><label className="label">Titre du document</label><input className="input" value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex: Lettre confidentielle" /></div>
+      <div className="form-group"><label className="label">Contenu</label><textarea className="input" value={contenu} onChange={e => setContenu(e.target.value)} rows={5} placeholder="Contenu du document..." /></div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save}>Enregistrer</button></div>
+    </>
+  );
+}
+
+function RoleForm({ player, onSave, onClose }) {
+  const [role, setRole] = useState(player?.role_murder || "");
+  return (
+    <>
+      <div className="form-group"><label className="label">Rôle dans la Murder Party</label><textarea className="input" value={role} onChange={e => setRole(e.target.value)} rows={6} placeholder="Décrivez le rôle du joueur..." /></div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={() => onSave(role)}>Enregistrer</button></div>
+    </>
+  );
+}
+
+function IndiceForm({ onSave, onClose }) {
+  const [contenu, setContenu] = useState("");
+  return (
+    <>
+      <div className="form-group"><label className="label">Contenu de l'indice</label><textarea className="input" value={contenu} onChange={e => setContenu(e.target.value)} rows={4} placeholder="Entrez l'indice à ajouter au coffre du joueur..." /></div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={() => onSave(contenu)}>Ajouter</button></div>
+    </>
+  );
+}
+
+
 function PlayerDashboard({ player: initialPlayer, onLogout }) {
   const [tab, setTab] = useState("profile");
   const [player, setPlayer] = useState(initialPlayer);
@@ -1480,9 +1984,12 @@ function PlayerDashboard({ player: initialPlayer, onLogout }) {
 
   const tabs = [
     { id: "profile", label: "Profil", icon: <Icons.User /> },
+    { id: "coffre", label: "Coffre", icon: <Icons.Lock /> },
+    { id: "coffres", label: "Coffres", icon: <Icons.Key /> },
     { id: "quests", label: "Quêtes", icon: <Icons.Scroll /> },
     { id: "leaderboard", label: "Classement", icon: <Icons.Trophy /> },
     { id: "investigate", label: "Enquêter", icon: <Icons.Search /> },
+    { id: "settings_player", label: "Réglages", icon: <Icons.Settings /> },
   ];
 
   return (
@@ -1496,9 +2003,12 @@ function PlayerDashboard({ player: initialPlayer, onLogout }) {
           </div>
         </div>
         {tab === "profile" && <PlayerProfile player={player} />}
+        {tab === "coffre" && <CoffrePersonnel player={player} />}
+        {tab === "coffres" && <CoffresGlobaux player={player} />}
         {tab === "quests" && <PlayerQuests player={player} />}
         {tab === "leaderboard" && <Leaderboard currentPlayerId={player.id} />}
         {tab === "investigate" && <PlayerInvestigate player={player} allowSelf={settings.allow_self_investigation} />}
+        {tab === "settings_player" && <PlayerSettings player={player} />}
       </div>
       <nav className="bottom-nav">
         {tabs.map(t => (
