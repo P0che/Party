@@ -1683,7 +1683,6 @@ function CoffresGlobaux({ player }) {
           .select("*, quests(titre, type)")
           .eq("document_id", docId);
 
-        // Charger les quêtes avec leur player_id pour connaître le destinataire
         const { data: triggersFull } = await supabase
           .from("quest_triggers")
           .select("*, quests(id, titre, type, player_id)")
@@ -1693,14 +1692,13 @@ function CoffresGlobaux({ player }) {
           let targetId = null;
 
           if (trigger.target_player_id) {
-            // Trigger avec cible explicite → uniquement si c'est le joueur qui trouve le doc
+            // Trigger AVEC cible → seulement si c'est cette personne qui ouvre
             if (trigger.target_player_id !== player.id) continue;
             targetId = player.id;
           } else {
-            // Trigger sans cible → la quête va à son joueur assigné (quest.player_id)
+            // Trigger SANS cible → active pour le propriétaire de la quête, peu importe qui ouvre
             targetId = trigger.quests?.player_id || null;
-            // Si la quête n'est pas assignée à quelqu'un, on ignore
-            if (!targetId) continue;
+            if (!targetId) continue; // quête sans propriétaire = on ignore
           }
 
           const { error } = await supabase.from("quest_activations").insert({
