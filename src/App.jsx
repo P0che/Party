@@ -1577,7 +1577,8 @@ function CoffrePersonnel({ player }) {
           {receptions.map(r => (
             <div key={r.id} style={{ borderLeft: "2px solid var(--gold-dim)", paddingLeft: 12, marginBottom: 12 }}>
               <div style={{ fontWeight: 600, color: "var(--gold)", fontSize: 14, marginBottom: 4 }}>{r.coffre_documents?.titre}</div>
-              <p style={{ color: "var(--cream-dim)", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.coffre_documents?.contenu}</p>
+              {r.coffre_documents?.image_url && <img src={r.coffre_documents.image_url} alt="" style={{ width: "100%", borderRadius: 8, marginBottom: 8, maxHeight: 240, objectFit: "cover" }} onError={e => e.target.style.display="none"} />}
+              {r.coffre_documents?.contenu && <p style={{ color: "var(--cream-dim)", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.coffre_documents.contenu}</p>}
             </div>
           ))}
         </div>
@@ -1650,7 +1651,8 @@ function CoffresGlobaux({ player }) {
               {opened[c.id].map(doc => (
                 <div key={doc.id} style={{ borderLeft: "2px solid var(--gold-dim)", paddingLeft: 12, marginBottom: 10 }}>
                   <div style={{ fontWeight: 600, color: "var(--gold)", fontSize: 13 }}>{doc.titre}</div>
-                  <p style={{ color: "var(--cream-dim)", fontSize: 12, marginTop: 3 }}>{doc.contenu}</p>
+                  {doc.image_url && <img src={doc.image_url} alt="" style={{ width: "100%", borderRadius: 8, margin: "6px 0", maxHeight: 200, objectFit: "cover" }} onError={e => e.target.style.display="none"} />}
+                  {doc.contenu && <p style={{ color: "var(--cream-dim)", fontSize: 12, marginTop: 3, whiteSpace: "pre-wrap" }}>{doc.contenu}</p>}
                 </div>
               ))}
             </div>
@@ -1864,7 +1866,8 @@ function AdminCoffres({ toast }) {
                 <div key={doc.id} style={{ background: "var(--bg-deep)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, color: "var(--gold)", marginBottom: 3 }}>{doc.titre}</div>
-                    <div style={{ fontSize: 12, color: "var(--cream-dim)", whiteSpace: "pre-wrap" }}>{doc.contenu.slice(0, 80)}{doc.contenu.length > 80 ? "…" : ""}</div>
+                    {doc.image_url && <img src={doc.image_url} alt="" style={{ width: 60, height: 40, objectFit: "cover", borderRadius: 4, marginBottom: 4 }} onError={e => e.target.style.display="none"} />}
+                    {doc.contenu && <div style={{ fontSize: 12, color: "var(--cream-dim)", whiteSpace: "pre-wrap" }}>{doc.contenu.slice(0, 80)}{doc.contenu.length > 80 ? "…" : ""}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                     <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setDocModal({ coffreId: c.id, doc })}><Icons.Edit /></button>
@@ -1931,16 +1934,19 @@ function CoffreForm({ coffre, onSave, onClose }) {
 function DocForm({ doc, onSave, onClose }) {
   const [titre, setTitre] = useState(doc?.titre || "");
   const [contenu, setContenu] = useState(doc?.contenu || "");
+  const [imageUrl, setImageUrl] = useState(doc?.image_url || "");
   const { show, ToastEl } = useToast();
   const save = () => {
     if (!titre.trim()) { show("Titre requis", "error"); return; }
-    onSave({ titre, contenu, ordre: doc?.ordre || 0 });
+    onSave({ titre, contenu, image_url: imageUrl, ordre: doc?.ordre || 0 });
   };
   return (
     <>
       {ToastEl}
       <div className="form-group"><label className="label">Titre du document</label><input className="input" value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex: Lettre confidentielle" /></div>
-      <div className="form-group"><label className="label">Contenu</label><textarea className="input" value={contenu} onChange={e => setContenu(e.target.value)} rows={5} placeholder="Contenu du document..." /></div>
+      <div className="form-group"><label className="label">Texte <span style={{color:"var(--muted)",fontSize:11}}>(optionnel)</span></label><textarea className="input" value={contenu} onChange={e => setContenu(e.target.value)} rows={5} placeholder="Contenu du document..." /></div>
+      <div className="form-group"><label className="label">Image URL <span style={{color:"var(--muted)",fontSize:11}}>(optionnel)</span></label><input className="input" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." /></div>
+      {imageUrl && <img src={imageUrl} alt="aperçu" style={{width:"100%", borderRadius:8, marginBottom:12, maxHeight:200, objectFit:"cover"}} onError={e=>e.target.style.display="none"} />}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save}>Enregistrer</button></div>
     </>
   );
