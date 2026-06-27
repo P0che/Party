@@ -2048,8 +2048,14 @@ function TableauInvestigation({ player }) {
   useEffect(() => { load(); }, [load]);
 
   const isUnlocked = (node) => {
+    // Sa propre fiche : toujours visible
+    if (node.type === "personnage" && node.player_id === player.id) return true;
+    // Autre personnage : visible seulement si toute la fiche a été découverte
     if (node.type === "personnage" && node.player_id) return fullyDiscoveredPlayers.has(node.player_id);
-    return !node.document_id || unlockedDocs.has(node.document_id);
+    // Nœud lié à un document : visible si le joueur possède ce document (reçu dans son coffre)
+    if (node.document_id) return unlockedDocs.has(node.document_id);
+    // Pas de verrou = visible dès le début
+    return true;
   };
   const isLienUnlocked = (lien) => !lien.document_id || unlockedDocs.has(lien.document_id);
 
