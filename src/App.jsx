@@ -14,8 +14,8 @@ import { createClient } from "@supabase/supabase-js";
 // ============================================================
 // CONFIGURATION - À MODIFIER
 // ============================================================
-const SUPABASE_URL = "https://VOTRE_PROJET.supabase.co";
-const SUPABASE_ANON_KEY = "VOTRE_ANON_KEY";
+const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -2420,16 +2420,6 @@ function LienForm({ lien, noeuds, documents, onSave, onClose }) {
         </select>
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save}>Enregistrer</button></div>
-    </>
-  );
-}
-
-function IndiceForm({ onSave, onClose }) {
-  const [contenu, setContenu] = useState("");
-  return (
-    <>
-      <div className="form-group"><label className="label">Contenu de l'indice</label><textarea className="input" value={contenu} onChange={e => setContenu(e.target.value)} rows={4} placeholder="Entrez l'indice à ajouter au coffre du joueur..." /></div>
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={() => onSave(contenu)}>Ajouter</button></div>
     </>
   );
 }
