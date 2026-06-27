@@ -17,7 +17,6 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -1178,38 +1177,56 @@ function PlayerQuests({ player }) {
   const [quests, setQuests] = useState([]);
   const [validations, setValidations] = useState([]);
   const [allValidations, setAllValidations] = useState([]);
+  const [activations, setActivations] = useState([]);
+  const [newActivations, setNewActivations] = useState([]);
   const [loading, setLoading] = useState(true);
   const { show, ToastEl } = useToast();
 
   const load = useCallback(async () => {
-    const [{ data: q }, { data: v }, { data: allV }] = await Promise.all([
+    const [{ data: q }, { data: v }, { data: allV }, { data: acts }] = await Promise.all([
       supabase.from("quests").select("*, users(nom)").eq("active", true).order("type"),
       supabase.from("quest_validations").select("*").eq("player_id", player.id),
       supabase.from("quest_validations").select("*, users(nom)").eq("status", "approved"),
+      supabase.from("quest_activations").select("*, quests(id, titre, type, description, player_id)").eq("player_id", player.id),
     ]);
-    // Filter quests: show if no player_id (global) OR player_id matches current player
+
+    // Quêtes normales visibles
     const visible = (q || []).filter(quest => !quest.player_id || quest.player_id === player.id);
     setQuests(visible);
     setValidations(v || []);
     setAllValidations(allV || []);
+    setActivations(acts || []);
+
+    // Nouvelles activations non vues
+    const unseen = (acts || []).filter(a => !a.seen);
+    setNewActivations(unseen);
+
+    // Marquer comme vues
+    if (unseen.length > 0) {
+      await supabase.from("quest_activations").update({ seen: true }).eq("player_id", player.id).eq("seen", false);
+    }
+
     setLoading(false);
   }, [player.id]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Combiner quêtes normales + quêtes activées (sans doublons)
+  const allQuests = [...quests];
+  activations.forEach(act => {
+    if (act.quests && !allQuests.find(q => q.id === act.quests.id)) {
+      allQuests.push({ ...act.quests, _activated: true, _activatedAt: act.activated_at });
+    }
+  });
+
   const getMyStatus = (questId) => validations.find(v => v.quest_id === questId)?.status || null;
 
-  // Get list of other players who validated this quest
   const getValidatedBy = (questId) =>
-    allValidations
-      .filter(v => v.quest_id === questId && v.player_id !== player.id)
-      .map(v => v.users?.nom)
-      .filter(Boolean);
+    allValidations.filter(v => v.quest_id === questId && v.player_id !== player.id).map(v => v.users?.nom).filter(Boolean);
 
   const requestValidation = async (questId) => {
     const existing = validations.find(v => v.quest_id === questId);
     if (existing) {
-      // Re-demande après refus : on remet en pending
       const { error } = await supabase.from("quest_validations").update({ status: "pending" }).eq("id", existing.id);
       if (error) { show("Erreur", "error"); } else { show("Nouvelle demande envoyée ✓", "success"); load(); }
     } else {
@@ -1220,9 +1237,9 @@ function PlayerQuests({ player }) {
 
   if (loading) return <div className="loading">Chargement...</div>;
 
-  const principales = quests.filter(q => q.type === "principale");
-  const secondaires = quests.filter(q => q.type === "secondaire");
-  const sabotages = quests.filter(q => q.type === "sabotage");
+  const principales = allQuests.filter(q => q.type === "principale");
+  const secondaires = allQuests.filter(q => q.type === "secondaire");
+  const sabotages = allQuests.filter(q => q.type === "sabotage");
 
   const QuestList = ({ list, label, labelColor }) => {
     return (
@@ -1242,9 +1259,12 @@ function PlayerQuests({ player }) {
           // Quête personnelle : seul le joueur assigné la voit (déjà filtré dans `quests`)
 
           return (
-            <div key={q.id} className="quest-card">
+            <div key={q.id} className="quest-card" style={q._activated ? { borderColor: "#CC0000" } : {}}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>{q.titre}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <div style={{ fontWeight: 600 }}>{q.titre}</div>
+                  {q._activated && <span className="badge" style={{ background: "rgba(255,51,51,0.15)", color: "#FF3333", border: "1px solid #CC0000", fontSize: 10 }}>🔔 Nouvelle</span>}
+                </div>
                 {q.description && <div style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 6 }}>{q.description}</div>}
                 {!isPersonal && takenByOther && (
                   <div style={{ fontSize: 12, color: "var(--success-bright)" }}>
@@ -1282,9 +1302,23 @@ function PlayerQuests({ player }) {
   return (
     <div className="fade-in">
       {ToastEl}
+      {/* Bannière nouvelles quêtes */}
+      {newActivations.length > 0 && (
+        <div style={{ background: "rgba(255,51,51,0.1)", border: "1px solid #CC0000", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 24, flexShrink: 0 }}>🔔</div>
+          <div>
+            <div style={{ fontWeight: 700, color: "#FF3333", fontSize: 14, marginBottom: 2 }}>
+              {newActivations.length} nouvelle(s) quête(s) débloquée(s) !
+            </div>
+            <div style={{ fontSize: 12, color: "var(--cream-dim)" }}>
+              {newActivations.map(a => a.quests?.titre).filter(Boolean).join(" • ")}
+            </div>
+          </div>
+        </div>
+      )}
       <QuestList list={principales} label="⚔ Quêtes Principales" />
       <QuestList list={secondaires} label="📜 Quêtes Secondaires" />
-      <QuestList list={sabotages} label="💀 Quêtes Sabotage" labelColor="#FF3333" />
+      {sabotages.length > 0 && <QuestList list={sabotages} label="💀 Quêtes Sabotage" labelColor="#FF3333" />}
     </div>
   );
 }
@@ -1626,17 +1660,48 @@ function CoffresGlobaux({ player }) {
     // Load documents
     const { data: docs } = await supabase.from("coffre_documents").select("*").eq("coffre_id", coffre.id).order("ordre");
     if (!docs || docs.length === 0) { show("Coffre vide !", "error"); return; }
-    // Insert receptions — compter seulement les nouveaux documents (pas déjà reçus)
+
+    // Insert receptions — compter seulement les nouveaux documents
     let newDocs = 0;
+    const newDocIds = [];
     for (const doc of docs) {
       const { error } = await supabase.from("coffre_receptions").insert({ player_id: player.id, coffre_id: coffre.id, document_id: doc.id });
-      if (!error) newDocs++; // pas de doublon = nouveau document
+      if (!error) { newDocs++; newDocIds.push(doc.id); }
     }
+
     // +5 points par nouveau document
     if (newDocs > 0) {
       const { data: cur } = await supabase.from("users").select("points").eq("id", player.id).single();
       await supabase.from("users").update({ points: (cur?.points || 0) + newDocs * 5 }).eq("id", player.id);
-      show(`${newDocs} document(s) découvert(s) ! +${newDocs * 5} points 🎉`, "gold");
+
+      // Déclencher les quêtes liées aux nouveaux documents
+      let triggeredQuests = 0;
+      for (const docId of newDocIds) {
+        const { data: triggers } = await supabase
+          .from("quest_triggers")
+          .select("*, quests(titre, type)")
+          .eq("document_id", docId);
+
+        for (const trigger of triggers || []) {
+          const targets = trigger.target_player_id
+            ? [trigger.target_player_id]          // joueur précis
+            : [player.id];                         // celui qui trouve le doc (null = soi-même)
+
+          for (const targetId of targets) {
+            const { error } = await supabase.from("quest_activations").insert({
+              player_id: targetId,
+              quest_id: trigger.quest_id,
+              triggered_by_document: docId,
+              seen: false,
+            });
+            if (!error) triggeredQuests++;
+          }
+        }
+      }
+
+      let msg = `${newDocs} document(s) découvert(s) ! +${newDocs * 5} points 🎉`;
+      if (triggeredQuests > 0) msg += ` • ${triggeredQuests} nouvelle(s) quête(s) activée(s) !`;
+      show(msg, "gold");
     } else {
       show("Vous avez déjà tous ces documents.", "success");
     }
@@ -1750,27 +1815,37 @@ function PlayerSettings({ player }) {
 function AdminCoffres({ toast }) {
   const [coffres, setCoffres] = useState([]);
   const [players, setPlayers] = useState([]);
+  const [quests, setQuests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState({});
   const [docs, setDocs] = useState({});
+  const [triggers, setTriggers] = useState({}); // docId → triggers[]
   const [modal, setModal] = useState(null);
   const [docModal, setDocModal] = useState(null);
   const [indiceModal, setIndiceModal] = useState(null);
+  const [triggerModal, setTriggerModal] = useState(null); // { docId, doc }
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: c }, { data: ps }] = await Promise.all([
+    const [{ data: c }, { data: ps }, { data: qs }] = await Promise.all([
       supabase.from("coffres_globaux").select("*").order("created_at"),
       supabase.from("users").select("id, nom, coffre_code, role_murder").order("nom"),
+      supabase.from("quests").select("id, titre, type").eq("active", true).order("titre"),
     ]);
     setCoffres(c || []);
     setPlayers(ps || []);
+    setQuests(qs || []);
     setLoading(false);
   }, []);
 
   const loadDocs = async (coffreId) => {
     const { data } = await supabase.from("coffre_documents").select("*").eq("coffre_id", coffreId).order("ordre");
     setDocs(d => ({ ...d, [coffreId]: data || [] }));
+    // Charger les triggers pour chaque doc
+    for (const doc of data || []) {
+      const { data: t } = await supabase.from("quest_triggers").select("*, quests(titre, type), users(nom)").eq("document_id", doc.id);
+      setTriggers(tr => ({ ...tr, [doc.id]: t || [] }));
+    }
   };
 
   useEffect(() => { load(); }, [load]);
@@ -1803,6 +1878,17 @@ function AdminCoffres({ toast }) {
     if (!confirm("Supprimer ce document ?")) return;
     await supabase.from("coffre_documents").delete().eq("id", docId);
     loadDocs(coffreId); toast.show("Document supprimé", "success");
+  };
+
+  const saveTrigger = async (docId, questId, targetPlayerId, coffreId) => {
+    await supabase.from("quest_triggers").insert({ document_id: docId, quest_id: questId, target_player_id: targetPlayerId || null });
+    loadDocs(coffreId); setTriggerModal(null); toast.show("Déclencheur ajouté ✓", "success");
+  };
+
+  const deleteTrigger = async (triggerId, coffreId) => {
+    await supabase.from("quest_triggers").delete().eq("id", triggerId);
+    loadDocs(coffreId); toast.show("Déclencheur supprimé", "success");
+  };
   };
 
   const saveIndice = async (playerId, contenu) => {
@@ -1878,15 +1964,39 @@ function AdminCoffres({ toast }) {
                 <button className="btn btn-ghost btn-sm" onClick={() => setDocModal({ coffreId: c.id, doc: null })}><Icons.Plus /> Ajouter</button>
               </div>
               {(docs[c.id] || []).map(doc => (
-                <div key={doc.id} style={{ background: "var(--bg-deep)", borderRadius: 8, padding: "10px 14px", marginBottom: 8, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--gold)", marginBottom: 3 }}>{doc.titre}</div>
-                    {doc.image_url && <img src={doc.image_url} alt="" style={{ width: 60, height: 40, objectFit: "cover", borderRadius: 4, marginBottom: 4 }} onError={e => e.target.style.display="none"} />}
-                    {doc.contenu && <div style={{ fontSize: 12, color: "var(--cream-dim)", whiteSpace: "pre-wrap" }}>{doc.contenu.slice(0, 80)}{doc.contenu.length > 80 ? "…" : ""}</div>}
+                <div key={doc.id} style={{ background: "var(--bg-deep)", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: "var(--gold)", marginBottom: 3 }}>{doc.titre}</div>
+                      {doc.image_url && <img src={doc.image_url} alt="" style={{ width: 60, height: 40, objectFit: "cover", borderRadius: 4, marginBottom: 4 }} onError={e => e.target.style.display="none"} />}
+                      {doc.contenu && <div style={{ fontSize: 12, color: "var(--cream-dim)", whiteSpace: "pre-wrap" }}>{doc.contenu.slice(0, 80)}{doc.contenu.length > 80 ? "…" : ""}</div>}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setDocModal({ coffreId: c.id, doc })}><Icons.Edit /></button>
+                      <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteDoc(doc.id, c.id)}><Icons.Trash /></button>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setDocModal({ coffreId: c.id, doc })}><Icons.Edit /></button>
-                    <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteDoc(doc.id, c.id)}><Icons.Trash /></button>
+                  {/* Déclencheurs liés à ce document */}
+                  <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>⚡ Déclencheurs ({(triggers[doc.id] || []).length})</span>
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setTriggerModal({ docId: doc.id, doc, coffreId: c.id })}>
+                        <Icons.Plus /> Ajouter
+                      </button>
+                    </div>
+                    {(triggers[doc.id] || []).map(t => (
+                      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, fontSize: 12 }}>
+                        <span style={{ color: t.quests?.type === "sabotage" ? "#FF3333" : t.quests?.type === "principale" ? "var(--blood-bright)" : "var(--cream-dim)" }}>
+                          {t.quests?.type === "sabotage" ? "💀" : t.quests?.type === "principale" ? "⚔" : "📜"} {t.quests?.titre}
+                        </span>
+                        <span style={{ color: "var(--muted)" }}>→</span>
+                        <span style={{ color: "var(--gold)", fontSize: 11 }}>{t.users?.nom || "Tous les joueurs"}</span>
+                        <button className="btn btn-danger btn-sm btn-icon" style={{ padding: "2px 5px", marginLeft: "auto" }} onClick={() => deleteTrigger(t.id, c.id)}>
+                          <Icons.X />
+                        </button>
+                      </div>
+                    ))}
+                    {(triggers[doc.id] || []).length === 0 && <p style={{ fontSize: 11, color: "var(--muted)" }}>Aucun déclencheur</p>}
                   </div>
                 </div>
               ))}
@@ -1924,6 +2034,13 @@ function AdminCoffres({ toast }) {
           )}
         </Modal>
       )}
+
+      {/* Modal déclencheur */}
+      {triggerModal && (
+        <Modal title={`Déclencheur — ${triggerModal.doc.titre}`} onClose={() => setTriggerModal(null)}>
+          <TriggerForm quests={quests} players={players} onSave={(questId, targetId) => saveTrigger(triggerModal.docId, questId, targetId, triggerModal.coffreId)} onClose={() => setTriggerModal(null)} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1942,6 +2059,46 @@ function CoffreForm({ coffre, onSave, onClose }) {
       <div className="form-group"><label className="label">Nom du coffre</label><input className="input" value={nom} onChange={e => setNom(e.target.value)} placeholder="Ex: Coffre de la crypte" /></div>
       <div className="form-group"><label className="label">Code (8 caractères)</label><input className="input" value={code} onChange={e => setCode(e.target.value)} placeholder="Ex: MORT1234" maxLength={20} /></div>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save}>Enregistrer</button></div>
+    </>
+  );
+}
+
+function TriggerForm({ quests, players, onSave, onClose }) {
+  const [questId, setQuestId] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const { show, ToastEl } = useToast();
+  const save = () => {
+    if (!questId) { show("Choisissez une quête", "error"); return; }
+    onSave(questId, targetId || null);
+  };
+  return (
+    <>
+      {ToastEl}
+      <p style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 16 }}>
+        Quand ce document est découvert, la quête sélectionnée sera automatiquement activée pour le joueur cible (ou pour celui qui trouve le document si aucun cible n'est choisi).
+      </p>
+      <div className="form-group">
+        <label className="label">Quête à activer *</label>
+        <select className="input" value={questId} onChange={e => setQuestId(e.target.value)}>
+          <option value="">— Choisir une quête —</option>
+          {quests.map(q => (
+            <option key={q.id} value={q.id}>
+              {q.type === "sabotage" ? "💀" : q.type === "principale" ? "⚔" : "📜"} {q.titre}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="label">Joueur cible <span style={{ color: "var(--muted)", fontSize: 11 }}>(vide = activée pour celui qui trouve le document)</span></label>
+        <select className="input" value={targetId} onChange={e => setTargetId(e.target.value)}>
+          <option value="">— Celui qui trouve le document —</option>
+          {players.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+        <button className="btn btn-gold" onClick={save}>Créer le déclencheur</button>
+      </div>
     </>
   );
 }
