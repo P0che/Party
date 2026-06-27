@@ -14,8 +14,9 @@ import { createClient } from "@supabase/supabase-js";
 // ============================================================
 // CONFIGURATION - À MODIFIER
 // ============================================================
-const SUPABASE_URL = "https://VOTRE_PROJET.supabase.co";
-const SUPABASE_ANON_KEY = "VOTRE_ANON_KEY";
+const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
+
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
