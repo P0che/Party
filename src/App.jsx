@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -1682,20 +1683,33 @@ function CoffresGlobaux({ player }) {
           .select("*, quests(titre, type)")
           .eq("document_id", docId);
 
-        for (const trigger of triggers || []) {
-          const targets = trigger.target_player_id
-            ? [trigger.target_player_id]          // joueur précis
-            : [player.id];                         // celui qui trouve le doc (null = soi-même)
+        // Charger les quêtes avec leur player_id pour connaître le destinataire
+        const { data: triggersFull } = await supabase
+          .from("quest_triggers")
+          .select("*, quests(id, titre, type, player_id)")
+          .eq("document_id", docId);
 
-          for (const targetId of targets) {
-            const { error } = await supabase.from("quest_activations").insert({
-              player_id: targetId,
-              quest_id: trigger.quest_id,
-              triggered_by_document: docId,
-              seen: false,
-            });
-            if (!error) triggeredQuests++;
+        for (const trigger of triggersFull || []) {
+          let targetId = null;
+
+          if (trigger.target_player_id) {
+            // Trigger avec cible explicite → uniquement si c'est le joueur qui trouve le doc
+            if (trigger.target_player_id !== player.id) continue;
+            targetId = player.id;
+          } else {
+            // Trigger sans cible → la quête va à son joueur assigné (quest.player_id)
+            targetId = trigger.quests?.player_id || null;
+            // Si la quête n'est pas assignée à quelqu'un, on ignore
+            if (!targetId) continue;
           }
+
+          const { error } = await supabase.from("quest_activations").insert({
+            player_id: targetId,
+            quest_id: trigger.quest_id,
+            triggered_by_document: docId,
+            seen: false,
+          });
+          if (!error) triggeredQuests++;
         }
       }
 
