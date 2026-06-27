@@ -1988,6 +1988,7 @@ function TableauInvestigation({ player }) {
   const [liens, setLiens] = useState([]);
   const [unlockedDocs, setUnlockedDocs] = useState(new Set());
   const [fullyDiscoveredPlayers, setFullyDiscoveredPlayers] = useState(new Set());
+  const [playersMap, setPlayersMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState(null);
   const [viewMode, setViewMode] = useState("canvas"); // "canvas" | "list"
@@ -2041,6 +2042,10 @@ function TableauInvestigation({ player }) {
     });
 
     setFullyDiscoveredPlayers(fullyDiscovered);
+    // Map id → joueur pour affichage titre
+    const pMap = {};
+    (allUsers || []).forEach(u => { pMap[u.id] = u; });
+    setPlayersMap(pMap);
     setLoading(false);
   }, [player.id]);
 
@@ -2066,6 +2071,15 @@ function TableauInvestigation({ player }) {
   });
 
   const getConnections = (nodeId) => visibleLiens.filter(l => l.noeud_source === nodeId || l.noeud_cible === nodeId);
+
+  // Pour un nœud personnage lié à un joueur → affiche le titre du joueur
+  // Pour les autres → affiche la description du nœud
+  const getNodeSubtitle = (node) => {
+    if (node.type === "personnage" && node.player_id && playersMap[node.player_id]) {
+      return stripHiddenMarkers(playersMap[node.player_id].titre || "");
+    }
+    return node.description || "";
+  };
 
   // Pan handlers (read-only canvas)
   const onBgMouseDown = (e) => {
@@ -2093,8 +2107,8 @@ function TableauInvestigation({ player }) {
           {selectedNode.image_url && <img src={selectedNode.image_url} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "cover" }} onError={e => e.target.style.display = "none"} />}
           <div style={{ padding: "16px 18px" }}>
             <div style={{ fontSize: 11, color: c.accent, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{c.icon} {selectedNode.type}</div>
-            <div className="cinzel" style={{ fontSize: 22, color: "var(--cream)", marginBottom: selectedNode.description ? 4 : 0 }}>{selectedNode.label}</div>
-            {selectedNode.description && <div style={{ fontSize: 13, color: c.accent, fontStyle: "italic" }}>"{selectedNode.description}"</div>}
+            <div className="cinzel" style={{ fontSize: 22, color: "var(--cream)", marginBottom: getNodeSubtitle(selectedNode) ? 4 : 0 }}>{selectedNode.label}</div>
+            {getNodeSubtitle(selectedNode) && <div style={{ fontSize: 14, color: c.accent, fontStyle: "italic" }}>{getNodeSubtitle(selectedNode)}</div>}
           </div>
         </div>
         {connections.length > 0 && (
@@ -2206,7 +2220,7 @@ function TableauInvestigation({ player }) {
                   <div style={{ fontSize: 9, color: c.accent, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{c.icon} {node.type}</div>
                   {node.image_url && <img src={node.image_url} alt="" style={{ width: "100%", height: 32, objectFit: "cover", borderRadius: 4, marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
                   <div style={{ fontSize: 10, fontWeight: 700, color: "var(--cream)", fontFamily: "Cinzel, serif", lineHeight: 1.3, wordBreak: "break-word" }}>{node.label}</div>
-                  {node.description && <div style={{ fontSize: 9, color: c.accent, fontStyle: "italic", marginTop: 2, lineHeight: 1.2, wordBreak: "break-word" }}>"{node.description}"</div>}
+                  {getNodeSubtitle(node) && <div style={{ fontSize: 9, color: c.accent, fontStyle: "italic", marginTop: 2, lineHeight: 1.2, wordBreak: "break-word" }}>{getNodeSubtitle(node)}</div>}
                   {conns.length > 0 && <div style={{ fontSize: 9, color: c.accent, marginTop: 3 }}>🔗 {conns.length}</div>}
                 </div>
               );
@@ -2281,7 +2295,7 @@ function TableauInvestigation({ player }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 10, color: c.accent, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>{c.icon} {node.type}</div>
                     <div className="cinzel" style={{ fontSize: 14, color: "var(--cream)", fontWeight: 600 }}>{node.label}</div>
-                    {node.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.description}</div>}
+                    {getNodeSubtitle(node) && <div style={{ fontSize: 12, color: c.accent, fontStyle: "italic" }}>{getNodeSubtitle(node)}</div>}
                   </div>
                   <div style={{ flexShrink: 0 }}>
                     {connections.length > 0 && <span className="badge" style={{ background: `${c.border}33`, color: c.accent, border: `1px solid ${c.border}`, fontSize: 11 }}>🔗 {connections.length}</span>}
