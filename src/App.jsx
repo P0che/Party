@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -1987,63 +1988,59 @@ function TableauInvestigation({ player }) {
   const [noeuds, setNoeuds] = useState([]);
   const [liens, setLiens] = useState([]);
   const [unlockedDocs, setUnlockedDocs] = useState(new Set());
+  const [unlockedPersonnages, setUnlockedPersonnages] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState(null);
   const [filter, setFilter] = useState("tous");
 
   const load = useCallback(async () => {
-    const [{ data: n }, { data: l }, { data: rec }] = await Promise.all([
+    const [{ data: n }, { data: l }, { data: rec }, { data: disc }] = await Promise.all([
       supabase.from("tableau_noeuds").select("*"),
       supabase.from("tableau_liens").select("*"),
       supabase.from("coffre_receptions").select("document_id").eq("player_id", player.id),
+      supabase.from("discoveries").select("target_player_id").eq("investigator_id", player.id),
     ]);
     setNoeuds(n || []);
     setLiens(l || []);
     setUnlockedDocs(new Set((rec || []).map(r => r.document_id)));
+    // Un personnage est déverrouillé dès qu'on a trouvé au moins un mot sur sa fiche
+    setUnlockedPersonnages(new Set((disc || []).map(d => d.target_player_id)));
     setLoading(false);
   }, [player.id]);
 
   useEffect(() => { load(); }, [load]);
 
-  const isUnlocked = (node) => !node.document_id || unlockedDocs.has(node.document_id);
+  const isUnlocked = (node) => {
+    if (node.type === "personnage" && node.player_id) return unlockedPersonnages.has(node.player_id);
+    return !node.document_id || unlockedDocs.has(node.document_id);
+  };
   const isLienUnlocked = (lien) => !lien.document_id || unlockedDocs.has(lien.document_id);
 
   const visibleNoeuds = noeuds.filter(isUnlocked);
-  const lockedNoeuds = noeuds.filter(n => !isUnlocked(n));
   const visibleLiens = liens.filter(l => {
     const src = noeuds.find(n => n.id === l.noeud_source);
     const tgt = noeuds.find(n => n.id === l.noeud_cible);
     return src && tgt && isUnlocked(src) && isUnlocked(tgt) && isLienUnlocked(l);
   });
-
   const getConnections = (nodeId) => visibleLiens.filter(l => l.noeud_source === nodeId || l.noeud_cible === nodeId);
-
   const filteredNoeuds = filter === "tous" ? visibleNoeuds : visibleNoeuds.filter(n => n.type === filter);
 
   if (loading) return <div className="loading">Chargement du tableau...</div>;
 
-  // If a node is selected, show full detail view
   if (selectedNode) {
     const c = NODE_COLORS[selectedNode.type] || NODE_COLORS.personnage;
     const connections = getConnections(selectedNode.id);
     return (
       <div className="fade-in">
-        <button className="btn btn-ghost btn-sm" onClick={() => setSelectedNode(null)} style={{ marginBottom: 16 }}>
-          ← Retour au tableau
-        </button>
-        {/* Node hero */}
+        <button className="btn btn-ghost btn-sm" onClick={() => setSelectedNode(null)} style={{ marginBottom: 16 }}>← Retour au tableau</button>
         <div style={{ background: c.bg, border: `2px solid ${c.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
-          {selectedNode.image_url && (
-            <img src={selectedNode.image_url} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover" }} onError={e => e.target.style.display="none"} />
-          )}
+          {selectedNode.image_url && <img src={selectedNode.image_url} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "cover" }} onError={e => e.target.style.display = "none"} />}
           <div style={{ padding: "16px 18px" }}>
             <div style={{ fontSize: 11, color: c.accent, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{c.icon} {selectedNode.type}</div>
             <div className="cinzel" style={{ fontSize: 22, color: "var(--cream)", marginBottom: 8 }}>{selectedNode.label}</div>
             {selectedNode.description && <p style={{ color: "var(--cream-dim)", fontSize: 14, lineHeight: 1.7 }}>{selectedNode.description}</p>}
           </div>
         </div>
-
-        {/* Connexions */}
         {connections.length > 0 && (
           <div>
             <div className="cinzel" style={{ color: "var(--gold)", fontSize: 14, marginBottom: 10 }}>🔗 Connexions ({connections.length})</div>
@@ -2054,13 +2051,12 @@ function TableauInvestigation({ player }) {
               if (!other) return null;
               const oc = NODE_COLORS[other.type] || NODE_COLORS.personnage;
               return (
-                <div key={lien.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, padding: "12px 14px", background: "var(--bg-card)", border: `1px solid ${lien.couleur || "var(--border)"}`, borderRadius: 10 }}
-                  onClick={() => setSelectedNode(other)}>
-                  <div style={{ fontSize: 22, flexShrink: 0 }}>{isSource ? "→" : "←"}</div>
+                <div key={lien.id} onClick={() => setSelectedNode(other)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, padding: "12px 14px", background: "var(--bg-card)", border: `1px solid ${lien.couleur || "var(--border)"}`, borderRadius: 10, cursor: "pointer" }}>
+                  <div style={{ fontSize: 20, flexShrink: 0, color: lien.couleur || "var(--blood-bright)" }}>{isSource ? "→" : "←"}</div>
                   <div style={{ flex: 1 }}>
                     {lien.label && <div style={{ fontSize: 11, color: lien.couleur || "var(--blood-bright)", fontStyle: "italic", marginBottom: 2 }}>"{lien.label}"</div>}
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{oc.icon} {other.label}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "capitalize" }}>{other.type}</div>
                   </div>
                   <div style={{ color: "var(--muted)", fontSize: 18 }}>›</div>
                 </div>
@@ -2068,27 +2064,21 @@ function TableauInvestigation({ player }) {
             })}
           </div>
         )}
-        {connections.length === 0 && (
-          <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 20 }}>Aucune connexion débloquée pour cet élément</div>
-        )}
+        {connections.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: 20 }}>Aucune connexion débloquée</p>}
       </div>
     );
   }
 
   return (
     <div className="fade-in">
-      {/* Header stats */}
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <div style={{ fontSize: 32, marginBottom: 4 }}>🕵️</div>
-        <div className="cinzel gold" style={{ fontSize: 18, marginBottom: 4 }}>Tableau d'enquête</div>
+        <div className="cinzel gold" style={{ fontSize: 18, marginBottom: 8 }}>Tableau d'enquête</div>
         <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-          <span className="badge badge-gold">🔓 {visibleNoeuds.length} débloqués</span>
+          <span className="badge badge-gold">🔓 {visibleNoeuds.length} révélés</span>
           <span className="badge badge-blood">🔗 {visibleLiens.length} connexions</span>
-          {lockedNoeuds.length > 0 && <span className="badge badge-muted">🔒 {lockedNoeuds.length} secrets</span>}
         </div>
       </div>
-
-      {/* Filtres par type */}
       <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
         {["tous", "personnage", "lieu", "objet", "evenement"].map(f => (
           <button key={f} onClick={() => setFilter(f)}
@@ -2098,11 +2088,9 @@ function TableauInvestigation({ player }) {
           </button>
         ))}
       </div>
-
-      {/* Connexions récentes (timeline) */}
       {visibleLiens.length > 0 && filter === "tous" && (
         <div style={{ marginBottom: 20 }}>
-          <div className="cinzel" style={{ color: "var(--blood-bright)", fontSize: 13, marginBottom: 10 }}>🔴 Fils rouges découverts</div>
+          <div className="cinzel" style={{ color: "var(--blood-bright)", fontSize: 13, marginBottom: 10 }}>🔴 Connexions découvertes</div>
           <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
             {visibleLiens.map((lien, i) => {
               const src = noeuds.find(n => n.id === lien.noeud_source);
@@ -2112,9 +2100,9 @@ function TableauInvestigation({ player }) {
                 <div key={lien.id} style={{ padding: "10px 14px", borderBottom: i < visibleLiens.length - 1 ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: lien.couleur || "#8B1A1A", flexShrink: 0 }} />
                   <div style={{ fontSize: 13, flex: 1 }}>
-                    <span style={{ color: "var(--cream)", fontWeight: 500 }}>{src.label}</span>
+                    <span style={{ fontWeight: 500 }}>{src.label}</span>
                     {lien.label && <span style={{ color: lien.couleur || "var(--blood-bright)", fontStyle: "italic", margin: "0 6px" }}>"{lien.label}"</span>}
-                    <span style={{ color: "var(--cream)", fontWeight: 500 }}>{tgt.label}</span>
+                    <span style={{ fontWeight: 500 }}>{tgt.label}</span>
                   </div>
                 </div>
               );
@@ -2122,27 +2110,23 @@ function TableauInvestigation({ player }) {
           </div>
         </div>
       )}
-
-      {/* Cards des nœuds */}
       {filteredNoeuds.length === 0 && (
-        <div className="empty-state"><div className="icon">🔍</div><p>Aucun élément débloqué dans cette catégorie</p></div>
+        <div className="empty-state"><div className="icon">🔍</div><p>Aucun élément révélé.<br />Continuez votre enquête !</p></div>
       )}
-
       {filteredNoeuds.map(node => {
         const c = NODE_COLORS[node.type] || NODE_COLORS.personnage;
         const connections = getConnections(node.id);
         return (
-          <div key={node.id}
-            onClick={() => setSelectedNode(node)}
-            style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, marginBottom: 12, overflow: "hidden", cursor: "pointer", transition: "border-color 0.2s, transform 0.1s", active: { transform: "scale(0.98)" } }}>
+          <div key={node.id} onClick={() => setSelectedNode(node)}
+            style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, marginBottom: 12, overflow: "hidden", cursor: "pointer" }}>
             <div style={{ display: "flex", gap: 12, padding: "14px 16px", alignItems: "center" }}>
               {node.image_url
-                ? <img src={node.image_url} alt="" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} onError={e => e.target.style.display="none"} />
+                ? <img src={node.image_url} alt="" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} onError={e => e.target.style.display = "none"} />
                 : <div style={{ width: 52, height: 52, borderRadius: 8, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>{c.icon}</div>
               }
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 10, color: c.accent, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>{c.icon} {node.type}</div>
-                <div className="cinzel" style={{ fontSize: 15, color: "var(--cream)", fontWeight: 600, marginBottom: 4 }}>{node.label}</div>
+                <div className="cinzel" style={{ fontSize: 15, color: "var(--cream)", fontWeight: 600, marginBottom: 2 }}>{node.label}</div>
                 {node.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.description}</div>}
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, gap: 2 }}>
@@ -2153,53 +2137,101 @@ function TableauInvestigation({ player }) {
           </div>
         );
       })}
-
-      {/* Nœuds verrouillés */}
-      {lockedNoeuds.length > 0 && filter === "tous" && (
-        <div style={{ marginTop: 8 }}>
-          <div className="label" style={{ marginBottom: 8 }}>🔒 Éléments non encore découverts</div>
-          {lockedNoeuds.map(node => (
-            <div key={node.id} style={{ background: "#0A0A0F", border: "1px dashed #2A2A3E", borderRadius: 10, padding: "12px 16px", marginBottom: 8, opacity: 0.5, display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 24 }}>🔒</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", fontFamily: "Cinzel, serif" }}>??? — secret non révélé</div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-
 // ============================================================
-// ADMIN - TABLEAU TAB
+// ADMIN - TABLEAU (drag & drop canvas)
 // ============================================================
 function AdminTableau({ toast }) {
   const [noeuds, setNoeuds] = useState([]);
   const [liens, setLiens] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [lienModal, setLienModal] = useState(null);
+  const [view, setView] = useState("canvas");
+  const [positions, setPositions] = useState({});
+  const [dragging, setDragging] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [selectedNode, setSelectedNode] = useState(null);
+  const containerRef = useRef(null);
+  const NODE_W = 130, NODE_H = 68;
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: n }, { data: l }, { data: d }] = await Promise.all([
+    const [{ data: n }, { data: l }, { data: d }, { data: ps }] = await Promise.all([
       supabase.from("tableau_noeuds").select("*").order("created_at"),
       supabase.from("tableau_liens").select("*"),
       supabase.from("coffre_documents").select("id, titre").order("titre"),
+      supabase.from("users").select("id, nom").order("nom"),
     ]);
     setNoeuds(n || []);
     setLiens(l || []);
     setDocuments(d || []);
+    setPlayers(ps || []);
+    const posMap = {};
+    (n || []).forEach(node => { posMap[node.id] = { x: node.pos_x, y: node.pos_y }; });
+    setPositions(posMap);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  const savePos = async (nodeId, x, y) => {
+    await supabase.from("tableau_noeuds").update({ pos_x: x, pos_y: y }).eq("id", nodeId);
+  };
+
+  const onNodeMouseDown = (e, node) => {
+    e.stopPropagation();
+    setDragging(node.id);
+    setSelectedNode(node);
+    const rect = containerRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const pos = positions[node.id] || { x: node.pos_x, y: node.pos_y };
+    setDragOffset({ x: clientX - rect.left - pan.x - pos.x, y: clientY - rect.top - pan.y - pos.y });
+  };
+
+  const onMouseMove = (e) => {
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (dragging) {
+      const x = Math.max(0, clientX - rect.left - pan.x - dragOffset.x);
+      const y = Math.max(0, clientY - rect.top - pan.y - dragOffset.y);
+      setPositions(p => ({ ...p, [dragging]: { x, y } }));
+    } else if (isPanning) {
+      setPan({ x: clientX - panStart.x, y: clientY - panStart.y });
+    }
+  };
+
+  const onMouseUp = async () => {
+    if (dragging) {
+      const pos = positions[dragging];
+      if (pos) await savePos(dragging, pos.x, pos.y);
+      setDragging(null);
+    }
+    setIsPanning(false);
+  };
+
+  const onBgMouseDown = (e) => {
+    if (e.target === e.currentTarget || e.target.tagName === "svg") {
+      setSelectedNode(null);
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  };
+
   const saveNoeud = async (form, id) => {
     if (id) { await supabase.from("tableau_noeuds").update(form).eq("id", id); }
-    else { await supabase.from("tableau_noeuds").insert(form); }
+    else { await supabase.from("tableau_noeuds").insert({ ...form, pos_x: 80 + Math.random() * 400, pos_y: 80 + Math.random() * 300 }); }
     load(); setModal(null); toast.show("Nœud enregistré ✓", "success");
   };
 
@@ -2225,89 +2257,153 @@ function AdminTableau({ toast }) {
 
   return (
     <div>
-      {/* NOEUDS */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h2 className="cinzel" style={{ color: "var(--gold)", fontSize: 18 }}>Nœuds du tableau</h2>
-        <button className="btn btn-primary" onClick={() => setModal({ noeud: null })}><Icons.Plus /> Nouveau nœud</button>
-      </div>
-      <div className="card" style={{ marginBottom: 24 }}>
-        <div className="table-wrapper">
-          <table>
-            <thead><tr><th>Nœud</th><th>Type</th><th>Déverrouillage</th><th>Actions</th></tr></thead>
-            <tbody>
-              {noeuds.map(n => (
-                <tr key={n.id}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {n.image_url && <img src={n.image_url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} onError={e => e.target.style.display="none"} />}
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{n.label}</div>
-                        {n.description && <div style={{ fontSize: 11, color: "var(--cream-dim)" }}>{n.description.slice(0, 40)}…</div>}
-                      </div>
-                    </div>
-                  </td>
-                  <td><span style={{ fontSize: 12 }}>{NODE_COLORS[n.type]?.icon} {n.type}</span></td>
-                  <td style={{ fontSize: 12, color: n.document_id ? "var(--gold)" : "var(--muted)" }}>
-                    {n.document_id ? (documents.find(d => d.id === n.document_id)?.titre || "Doc lié") : "Visible dès le début"}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => setModal({ noeud: n })}><Icons.Edit /> Modifier</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => deleteNoeud(n.id)}><Icons.Trash /> Supprimer</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {noeuds.length === 0 && <div className="empty-state"><div className="icon">🔍</div><p>Aucun nœud créé</p></div>}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <h2 className="cinzel" style={{ color: "var(--gold)", fontSize: 18 }}>Tableau d'enquête</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className={`btn btn-sm ${view === "canvas" ? "btn-gold" : "btn-ghost"}`} onClick={() => setView("canvas")}>🗺 Canvas</button>
+          <button className={`btn btn-sm ${view === "list" ? "btn-gold" : "btn-ghost"}`} onClick={() => setView("list")}>📋 Liste</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setModal({ noeud: null })}><Icons.Plus /> Nœud</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setLienModal({ lien: null })} disabled={noeuds.length < 2}><Icons.Plus /> Lien</button>
         </div>
       </div>
 
-      {/* LIENS */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h2 className="cinzel" style={{ color: "var(--gold)", fontSize: 18 }}>Fils rouges (liens)</h2>
-        <button className="btn btn-primary" onClick={() => setLienModal({ lien: null })} disabled={noeuds.length < 2}><Icons.Plus /> Nouveau lien</button>
-      </div>
-      <div className="card">
-        <div className="table-wrapper">
-          <table>
-            <thead><tr><th>Source</th><th>Relation</th><th>Cible</th><th>Déverrouillage</th><th>Actions</th></tr></thead>
-            <tbody>
-              {liens.map(l => {
-                const src = noeuds.find(n => n.id === l.noeud_source);
-                const tgt = noeuds.find(n => n.id === l.noeud_cible);
+      {view === "canvas" && (
+        <>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Glissez les nœuds pour les positionner. Position sauvegardée automatiquement. 🔒 = verrouillé par document.</div>
+          <div
+            ref={containerRef}
+            style={{ position: "relative", width: "100%", height: 520, background: "#06060A", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden", cursor: isPanning ? "grabbing" : "grab", userSelect: "none" }}
+            onMouseDown={onBgMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            onTouchMove={e => { e.preventDefault(); onMouseMove(e); }}
+            onTouchEnd={onMouseUp}
+          >
+            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+              <defs>
+                <pattern id="admingrid" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform={`translate(${pan.x % 40},${pan.y % 40})`}>
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1A1A28" strokeWidth="0.5" />
+                </pattern>
+                <marker id="admarrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#8B1A1A" />
+                </marker>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#admingrid)" />
+              {liens.map(lien => {
+                const src = noeuds.find(n => n.id === lien.noeud_source);
+                const tgt = noeuds.find(n => n.id === lien.noeud_cible);
+                if (!src || !tgt) return null;
+                const sp = positions[src.id] || { x: src.pos_x, y: src.pos_y };
+                const tp = positions[tgt.id] || { x: tgt.pos_x, y: tgt.pos_y };
+                const x1 = sp.x + pan.x + NODE_W / 2, y1 = sp.y + pan.y + NODE_H / 2;
+                const x2 = tp.x + pan.x + NODE_W / 2, y2 = tp.y + pan.y + NODE_H / 2;
+                const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+                const color = lien.couleur || "#8B1A1A";
                 return (
-                  <tr key={l.id}>
-                    <td style={{ fontWeight: 500 }}>{src?.label || "?"}</td>
-                    <td><span style={{ color: l.couleur || "var(--blood-bright)", fontSize: 13, fontStyle: "italic" }}>"{l.label || "—"}"</span></td>
-                    <td style={{ fontWeight: 500 }}>{tgt?.label || "?"}</td>
-                    <td style={{ fontSize: 12, color: l.document_id ? "var(--gold)" : "var(--muted)" }}>
-                      {l.document_id ? (documents.find(d => d.id === l.document_id)?.titre || "Doc lié") : "Visible dès le début"}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setLienModal({ lien: l })}><Icons.Edit /> Modifier</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => deleteLien(l.id)}><Icons.Trash /> Supprimer</button>
-                      </div>
-                    </td>
-                  </tr>
+                  <g key={lien.id}>
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth="1.5" strokeDasharray={lien.document_id ? "6,3" : "none"} markerEnd="url(#admarrow)" opacity="0.85" />
+                    {lien.label && (
+                      <g>
+                        <rect x={mx - lien.label.length * 3.5} y={my - 10} width={lien.label.length * 7 + 8} height={18} rx="4" fill="#0D0D14" opacity="0.95" />
+                        <text x={mx} y={my + 4} textAnchor="middle" fill={color} fontSize="10" fontFamily="Cinzel, serif">{lien.label}</text>
+                      </g>
+                    )}
+                  </g>
                 );
               })}
-            </tbody>
-          </table>
-          {liens.length === 0 && <div className="empty-state"><div className="icon">🕸️</div><p>Aucun lien créé</p></div>}
-        </div>
-      </div>
-
-      {/* Modal nœud */}
-      {modal && (
-        <Modal title={modal.noeud ? "Modifier le nœud" : "Nouveau nœud"} onClose={() => setModal(null)}>
-          <NoeudForm noeud={modal.noeud} documents={documents} onSave={(f) => saveNoeud(f, modal.noeud?.id)} onClose={() => setModal(null)} />
-        </Modal>
+            </svg>
+            {noeuds.map(node => {
+              const pos = positions[node.id] || { x: node.pos_x, y: node.pos_y };
+              const c = NODE_COLORS[node.type] || NODE_COLORS.personnage;
+              const isDraggingThis = dragging === node.id;
+              const isSelected = selectedNode?.id === node.id;
+              return (
+                <div key={node.id}
+                  onMouseDown={e => onNodeMouseDown(e, node)}
+                  onTouchStart={e => { e.preventDefault(); onNodeMouseDown(e, node); }}
+                  style={{ position: "absolute", left: pos.x + pan.x, top: pos.y + pan.y, width: NODE_W, background: c.bg, border: `2px solid ${isSelected ? "var(--gold)" : c.border}`, borderRadius: 8, padding: "7px 10px", cursor: isDraggingThis ? "grabbing" : "grab", boxShadow: isSelected ? `0 0 14px ${c.border}99` : "0 2px 8px rgba(0,0,0,0.5)", zIndex: isDraggingThis ? 100 : isSelected ? 50 : 10, transition: isDraggingThis ? "none" : "box-shadow 0.2s" }}>
+                  <div style={{ fontSize: 9, color: c.accent, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{c.icon} {node.type}{(node.document_id || (node.type === "personnage" && node.player_id)) ? " 🔒" : ""}</div>
+                  {node.image_url && <img src={node.image_url} alt="" style={{ width: "100%", height: 30, objectFit: "cover", borderRadius: 4, marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--cream)", fontFamily: "Cinzel, serif", lineHeight: 1.3, wordBreak: "break-word" }}>{node.label}</div>
+                </div>
+              );
+            })}
+          </div>
+          {selectedNode && (
+            <div className="card" style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>{NODE_COLORS[selectedNode.type]?.icon} {selectedNode.label}</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setModal({ noeud: selectedNode }); setSelectedNode(null); }}><Icons.Edit /> Modifier</button>
+              <button className="btn btn-danger btn-sm" onClick={() => { deleteNoeud(selectedNode.id); setSelectedNode(null); }}><Icons.Trash /> Supprimer</button>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Modal lien */}
+      {view === "list" && (
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="label" style={{ marginBottom: 10 }}>Nœuds ({noeuds.length})</div>
+            <div className="table-wrapper">
+              <table>
+                <thead><tr><th>Nœud</th><th>Type</th><th>Déverr.</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {noeuds.map(n => (
+                    <tr key={n.id}>
+                      <td style={{ fontWeight: 500 }}>{n.label}</td>
+                      <td><span style={{ fontSize: 12 }}>{NODE_COLORS[n.type]?.icon} {n.type}</span></td>
+                      <td style={{ fontSize: 12, color: (n.document_id || n.player_id) ? "var(--gold)" : "var(--muted)" }}>
+                        {n.type === "personnage" && n.player_id ? "Via enquête joueur" : n.document_id ? (documents.find(d => d.id === n.document_id)?.titre || "Doc lié") : "Dès le début"}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setModal({ noeud: n })}><Icons.Edit /></button>
+                          <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteNoeud(n.id)}><Icons.Trash /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {noeuds.length === 0 && <div className="empty-state"><div className="icon">🔍</div><p>Aucun nœud</p></div>}
+            </div>
+          </div>
+          <div className="card">
+            <div className="label" style={{ marginBottom: 10 }}>Liens ({liens.length})</div>
+            <div className="table-wrapper">
+              <table>
+                <thead><tr><th>Source → Cible</th><th>Label</th><th>Déverr.</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {liens.map(l => {
+                    const src = noeuds.find(n => n.id === l.noeud_source);
+                    const tgt = noeuds.find(n => n.id === l.noeud_cible);
+                    return (
+                      <tr key={l.id}>
+                        <td style={{ fontSize: 12 }}>{src?.label || "?"} → {tgt?.label || "?"}</td>
+                        <td style={{ fontSize: 12, color: l.couleur || "var(--blood-bright)", fontStyle: "italic" }}>{l.label || "—"}</td>
+                        <td style={{ fontSize: 12, color: l.document_id ? "var(--gold)" : "var(--muted)" }}>{l.document_id ? (documents.find(d => d.id === l.document_id)?.titre || "Doc") : "Dès le début"}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setLienModal({ lien: l })}><Icons.Edit /></button>
+                            <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteLien(l.id)}><Icons.Trash /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {liens.length === 0 && <div className="empty-state"><div className="icon">🕸️</div><p>Aucun lien</p></div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal.noeud ? "Modifier le nœud" : "Nouveau nœud"} onClose={() => setModal(null)}>
+          <NoeudForm noeud={modal.noeud} documents={documents} players={players} onSave={(f) => saveNoeud(f, modal.noeud?.id)} onClose={() => setModal(null)} />
+        </Modal>
+      )}
       {lienModal && (
         <Modal title={lienModal.lien ? "Modifier le lien" : "Nouveau lien"} onClose={() => setLienModal(null)}>
           <LienForm lien={lienModal.lien} noeuds={noeuds} documents={documents} onSave={(f) => saveLien(f, lienModal.lien?.id)} onClose={() => setLienModal(null)} />
@@ -2316,8 +2412,7 @@ function AdminTableau({ toast }) {
     </div>
   );
 }
-
-function NoeudForm({ noeud, documents, onSave, onClose }) {
+function NoeudForm({ noeud, documents, players, onSave, onClose }) {
   const [form, setForm] = useState({
     label: noeud?.label || "",
     type: noeud?.type || "personnage",
@@ -2326,12 +2421,13 @@ function NoeudForm({ noeud, documents, onSave, onClose }) {
     pos_x: noeud?.pos_x || 200,
     pos_y: noeud?.pos_y || 200,
     document_id: noeud?.document_id || null,
+    player_id: noeud?.player_id || null,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const { show, ToastEl } = useToast();
   const save = () => {
     if (!form.label.trim()) { show("Label requis", "error"); return; }
-    onSave({ ...form, document_id: form.document_id || null });
+    onSave({ ...form, document_id: form.document_id || null, player_id: form.player_id || null });
   };
   return (
     <>
@@ -2348,19 +2444,26 @@ function NoeudForm({ noeud, documents, onSave, onClose }) {
           </select>
         </div>
       </div>
+      {form.type === "personnage" && players?.length > 0 && (
+        <div className="form-group">
+          <label className="label">Joueur associé <span style={{ color: "var(--gold)", fontSize: 11 }}>— Se déverrouille quand ce joueur est investigué</span></label>
+          <select className="input" value={form.player_id || ""} onChange={e => set("player_id", e.target.value || null)}>
+            <option value="">— Aucun joueur associé —</option>
+            {players.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+        </div>
+      )}
       <div className="form-group"><label className="label">Description</label><textarea className="input" value={form.description} onChange={e => set("description", e.target.value)} rows={2} placeholder="Détails..." /></div>
       <div className="form-group"><label className="label">Image URL</label><input className="input" value={form.image_url} onChange={e => set("image_url", e.target.value)} placeholder="https://..." /></div>
-      <div className="form-row">
-        <div className="form-group" style={{ flex: 1 }}><label className="label">Position X</label><input className="input" type="number" value={form.pos_x} onChange={e => set("pos_x", +e.target.value)} /></div>
-        <div className="form-group" style={{ flex: 1 }}><label className="label">Position Y</label><input className="input" type="number" value={form.pos_y} onChange={e => set("pos_y", +e.target.value)} /></div>
-      </div>
-      <div className="form-group">
-        <label className="label">Déverrouillé par <span style={{ color: "var(--muted)", fontSize: 11 }}>(optionnel — vide = visible dès le début)</span></label>
-        <select className="input" value={form.document_id || ""} onChange={e => set("document_id", e.target.value || null)}>
-          <option value="">— Visible dès le début —</option>
-          {documents.map(d => <option key={d.id} value={d.id}>{d.titre}</option>)}
-        </select>
-      </div>
+      {!form.player_id && (
+        <div className="form-group">
+          <label className="label">Déverrouillé par document <span style={{ color: "var(--muted)", fontSize: 11 }}>(optionnel — vide = visible dès le début)</span></label>
+          <select className="input" value={form.document_id || ""} onChange={e => set("document_id", e.target.value || null)}>
+            <option value="">— Visible dès le début —</option>
+            {documents.map(d => <option key={d.id} value={d.id}>{d.titre}</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save}>Enregistrer</button></div>
     </>
   );
