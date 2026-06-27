@@ -1889,7 +1889,6 @@ function AdminCoffres({ toast }) {
     await supabase.from("quest_triggers").delete().eq("id", triggerId);
     loadDocs(coffreId); toast.show("Déclencheur supprimé", "success");
   };
-  };
 
   const saveIndice = async (playerId, contenu) => {
     if (!contenu.trim()) return;
