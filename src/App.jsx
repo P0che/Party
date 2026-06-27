@@ -17,6 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -1187,7 +1188,7 @@ function PlayerQuests({ player }) {
       supabase.from("quests").select("*, users(nom)").eq("active", true).order("type"),
       supabase.from("quest_validations").select("*").eq("player_id", player.id),
       supabase.from("quest_validations").select("*, users(nom)").eq("status", "approved"),
-      supabase.from("quest_activations").select("*, quests(id, titre, type, description, player_id)").eq("player_id", player.id).eq("enabled", true),
+      supabase.from("quest_activations").select("*, quests(id, titre, type, description, player_id)").eq("player_id", player.id),
     ]);
 
     // Quêtes normales visibles (globales ou assignées à ce joueur)
@@ -1716,7 +1717,6 @@ function CoffresGlobaux({ player }) {
             quest_id: trigger.quest_id,
             triggered_by_document: docId,
             seen: false,
-            enabled: true,
           }, { onConflict: "player_id,quest_id" });
           if (!error) triggeredQuests++;
         }
