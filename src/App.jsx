@@ -725,6 +725,7 @@ function QuestForm({ quest, players, onSave, onClose }) {
           <select className="input" value={form.type} onChange={e => set("type", e.target.value)}>
             <option value="principale">Principale (+10 pts)</option>
             <option value="secondaire">Secondaire (+5 pts)</option>
+            <option value="sabotage">Sabotage (+15 pts)</option>
           </select>
         </div>
         <div className="form-group" style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 22 }}>
@@ -904,8 +905,9 @@ function AdminQuests({ toast }) {
                       {q.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", marginTop: 2 }}>{q.description.slice(0, 60)}{q.description.length > 60 ? "…" : ""}</div>}
                     </td>
                     <td>
-                      <span className={`badge ${q.type === "principale" ? "badge-blood" : "badge-muted"}`}>
-                        {q.type === "principale" ? "⚔ Principale" : "📜 Secondaire"}
+                      <span className={`badge ${q.type === "principale" ? "badge-blood" : q.type === "sabotage" ? "badge-blood" : "badge-muted"}`}
+                        style={q.type === "sabotage" ? { background: "rgba(180,0,0,0.2)", color: "#FF3333", border: "1px solid #CC0000" } : {}}>
+                        {q.type === "principale" ? "⚔ Principale" : q.type === "sabotage" ? "💀 Sabotage" : "📜 Secondaire"}
                       </span>
                     </td>
                     <td style={{ fontSize: 13, color: q.player_id ? "var(--gold)" : "var(--muted)" }}>
@@ -962,7 +964,7 @@ function AdminValidations({ toast }) {
 
   const handle = async (val, approve) => {
     if (approve) {
-      const pts = val.quests.type === "principale" ? 10 : 5;
+      const pts = val.quests.type === "principale" ? 10 : val.quests.type === "sabotage" ? 15 : 5;
       await supabase.from("users").update({ points: supabase.rpc ? undefined : undefined }).eq("id", val.player_id);
       // Increment points
       const { data: user } = await supabase.from("users").select("points").eq("id", val.player_id).single();
@@ -996,8 +998,9 @@ function AdminValidations({ toast }) {
                     <div style={{ fontWeight: 600 }}>{v.users?.nom}</div>
                     <div style={{ fontSize: 13, color: "var(--cream-dim)" }}>
                       {v.quests?.titre}
-                      <span className={`badge ${v.quests?.type === "principale" ? "badge-blood" : "badge-muted"}`} style={{ marginLeft: 8, fontSize: 11 }}>
-                        {v.quests?.type === "principale" ? "+10" : "+5"} pts
+                      <span className={`badge ${v.quests?.type === "sabotage" ? "" : v.quests?.type === "principale" ? "badge-blood" : "badge-muted"}`}
+                        style={v.quests?.type === "sabotage" ? { marginLeft: 8, fontSize: 11, background: "rgba(180,0,0,0.2)", color: "#FF3333", border: "1px solid #CC0000", display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 20 } : { marginLeft: 8, fontSize: 11 }}>
+                        {v.quests?.type === "principale" ? "+10" : v.quests?.type === "sabotage" ? "💀 +15" : "+5"} pts
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
@@ -1219,12 +1222,13 @@ function PlayerQuests({ player }) {
 
   const principales = quests.filter(q => q.type === "principale");
   const secondaires = quests.filter(q => q.type === "secondaire");
+  const sabotages = quests.filter(q => q.type === "sabotage");
 
-  const QuestList = ({ list, label }) => {
+  const QuestList = ({ list, label, labelColor }) => {
     return (
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-          <span className="cinzel" style={{ color: "var(--gold)", fontSize: 15 }}>{label}</span>
+          <span className="cinzel" style={{ color: labelColor || "var(--gold)", fontSize: 15 }}>{label}</span>
           <span className="badge badge-muted">{list.length}</span>
         </div>
         {list.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>Aucune quête disponible</p>}
@@ -1280,6 +1284,7 @@ function PlayerQuests({ player }) {
       {ToastEl}
       <QuestList list={principales} label="⚔ Quêtes Principales" />
       <QuestList list={secondaires} label="📜 Quêtes Secondaires" />
+      <QuestList list={sabotages} label="💀 Quêtes Sabotage" labelColor="#FF3333" />
     </div>
   );
 }
@@ -1621,12 +1626,21 @@ function CoffresGlobaux({ player }) {
     // Load documents
     const { data: docs } = await supabase.from("coffre_documents").select("*").eq("coffre_id", coffre.id).order("ordre");
     if (!docs || docs.length === 0) { show("Coffre vide !", "error"); return; }
-    // Insert receptions (ignore duplicates)
+    // Insert receptions — compter seulement les nouveaux documents (pas déjà reçus)
+    let newDocs = 0;
     for (const doc of docs) {
-      await supabase.from("coffre_receptions").upsert({ player_id: player.id, coffre_id: coffre.id, document_id: doc.id }, { onConflict: "player_id,document_id" });
+      const { error } = await supabase.from("coffre_receptions").insert({ player_id: player.id, coffre_id: coffre.id, document_id: doc.id });
+      if (!error) newDocs++; // pas de doublon = nouveau document
+    }
+    // +5 points par nouveau document
+    if (newDocs > 0) {
+      const { data: cur } = await supabase.from("users").select("points").eq("id", player.id).single();
+      await supabase.from("users").update({ points: (cur?.points || 0) + newDocs * 5 }).eq("id", player.id);
+      show(`${newDocs} document(s) découvert(s) ! +${newDocs * 5} points 🎉`, "gold");
+    } else {
+      show("Vous avez déjà tous ces documents.", "success");
     }
     setOpened(o => ({ ...o, [coffre.id]: docs }));
-    show(`${docs.length} document(s) ajouté(s) à votre coffre ! 🎉`, "gold");
   };
 
   if (loading) return <div className="loading">Chargement...</div>;
