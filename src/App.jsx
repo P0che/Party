@@ -1689,25 +1689,28 @@ function CoffresGlobaux({ player }) {
           .eq("document_id", docId);
 
         for (const trigger of triggersFull || []) {
-          let targetId = null;
-
           if (trigger.target_player_id) {
             // Trigger AVEC cible → seulement si c'est cette personne qui ouvre
             if (trigger.target_player_id !== player.id) continue;
-            targetId = player.id;
+            const { error } = await supabase.from("quest_activations").insert({
+              player_id: player.id,
+              quest_id: trigger.quest_id,
+              triggered_by_document: docId,
+              seen: false,
+            });
+            if (!error) triggeredQuests++;
           } else {
             // Trigger SANS cible → active pour le propriétaire de la quête, peu importe qui ouvre
-            targetId = trigger.quests?.player_id || null;
-            if (!targetId) continue; // quête sans propriétaire = on ignore
+            const targetId = trigger.quests?.player_id;
+            if (!targetId) continue;
+            const { error } = await supabase.from("quest_activations").insert({
+              player_id: targetId,
+              quest_id: trigger.quest_id,
+              triggered_by_document: docId,
+              seen: false,
+            });
+            if (!error) triggeredQuests++;
           }
-
-          const { error } = await supabase.from("quest_activations").insert({
-            player_id: targetId,
-            quest_id: trigger.quest_id,
-            triggered_by_document: docId,
-            seen: false,
-          });
-          if (!error) triggeredQuests++;
         }
       }
 
