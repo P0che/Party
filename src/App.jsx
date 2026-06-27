@@ -1187,10 +1187,10 @@ function PlayerQuests({ player }) {
       supabase.from("quests").select("*, users(nom)").eq("active", true).order("type"),
       supabase.from("quest_validations").select("*").eq("player_id", player.id),
       supabase.from("quest_validations").select("*, users(nom)").eq("status", "approved"),
-      supabase.from("quest_activations").select("*, quests(id, titre, type, description, player_id)").eq("player_id", player.id),
+      supabase.from("quest_activations").select("*, quests(id, titre, type, description, player_id)").eq("player_id", player.id).eq("enabled", true),
     ]);
 
-    // Quêtes normales visibles
+    // Quêtes normales visibles (globales ou assignées à ce joueur)
     const visible = (q || []).filter(quest => !quest.player_id || quest.player_id === player.id);
     setQuests(visible);
     setValidations(v || []);
@@ -1201,7 +1201,6 @@ function PlayerQuests({ player }) {
     const unseen = (acts || []).filter(a => !a.seen);
     setNewActivations(unseen);
 
-    // Marquer comme vues
     if (unseen.length > 0) {
       await supabase.from("quest_activations").update({ seen: true }).eq("player_id", player.id).eq("seen", false);
     }
@@ -1662,10 +1661,18 @@ function CoffresGlobaux({ player }) {
     if (!docs || docs.length === 0) { show("Coffre vide !", "error"); return; }
 
     // Insert receptions — compter seulement les nouveaux documents
+    // Vérifier quels documents le joueur a déjà
+    const { data: existing } = await supabase.from("coffre_receptions")
+      .select("document_id").eq("player_id", player.id).in("document_id", docs.map(d => d.id));
+    const existingIds = new Set((existing || []).map(e => e.document_id));
+
     let newDocs = 0;
     const newDocIds = [];
     for (const doc of docs) {
-      const { error } = await supabase.from("coffre_receptions").insert({ player_id: player.id, coffre_id: coffre.id, document_id: doc.id });
+      if (existingIds.has(doc.id)) continue; // déjà reçu, on skip
+      const { error } = await supabase.from("coffre_receptions").insert(
+        { player_id: player.id, coffre_id: coffre.id, document_id: doc.id }
+      );
       if (!error) { newDocs++; newDocIds.push(doc.id); }
     }
 
@@ -1684,7 +1691,7 @@ function CoffresGlobaux({ player }) {
 
         const { data: triggersFull } = await supabase
           .from("quest_triggers")
-          .select("*, quests(id, titre, type, player_id)")
+          .select("*, quests(id, titre, type, player_id, active)")
           .eq("document_id", docId);
 
         for (const trigger of triggersFull || []) {
@@ -1695,17 +1702,22 @@ function CoffresGlobaux({ player }) {
             if (trigger.target_player_id !== player.id) continue;
             targetId = player.id;
           } else {
-            // Trigger SANS cible : envoie au propriétaire de la quête, peu importe qui ouvre
+            // Trigger SANS cible : active la quête pour son propriétaire, peu importe qui ouvre
             targetId = trigger.quests?.player_id;
             if (!targetId) continue;
           }
 
-          const { error } = await supabase.from("quest_activations").insert({
+          // Activer la quête (passer active=true) — c'est le statut sur la quête elle-même
+          await supabase.from("quests").update({ active: true }).eq("id", trigger.quest_id);
+
+          // Notifier le joueur cible via quest_activations (pour la bannière 🔔)
+          const { error } = await supabase.from("quest_activations").upsert({
             player_id: targetId,
             quest_id: trigger.quest_id,
             triggered_by_document: docId,
             seen: false,
-          });
+            enabled: true,
+          }, { onConflict: "player_id,quest_id" });
           if (!error) triggeredQuests++;
         }
       }
@@ -1841,7 +1853,7 @@ function AdminCoffres({ toast }) {
     const [{ data: c }, { data: ps }, { data: qs }] = await Promise.all([
       supabase.from("coffres_globaux").select("*").order("created_at"),
       supabase.from("users").select("id, nom, coffre_code, role_murder").order("nom"),
-      supabase.from("quests").select("id, titre, type").eq("active", true).order("titre"),
+      supabase.from("quests").select("id, titre, type, active, player_id").order("titre"),
     ]);
     setCoffres(c || []);
     setPlayers(ps || []);
@@ -2093,7 +2105,7 @@ function TriggerForm({ quests, players, onSave, onClose }) {
           <option value="">— Choisir une quête —</option>
           {quests.map(q => (
             <option key={q.id} value={q.id}>
-              {q.type === "sabotage" ? "💀" : q.type === "principale" ? "⚔" : "📜"} {q.titre}
+              {q.type === "sabotage" ? "💀" : q.type === "principale" ? "⚔" : "📜"} {q.titre} {!q.active ? "(inactive)" : ""}
             </option>
           ))}
         </select>
