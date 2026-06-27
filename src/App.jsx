@@ -1292,7 +1292,7 @@ function Leaderboard({ currentPlayerId }) {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("users").select("id, nom, points, photo, titre").order("points", { ascending: false });
+    const { data } = await supabase.from("users").select("id, nom, points, photo").order("points", { ascending: false });
     setPlayers(data || []);
     setLoading(false);
   }, []);
@@ -1327,7 +1327,6 @@ function Leaderboard({ currentPlayerId }) {
               {stripHiddenMarkers(p.nom)}
               {p.id === currentPlayerId && <span className="badge badge-gold" style={{ marginLeft: 8, fontSize: 11 }}>Vous</span>}
             </div>
-            {p.titre && <div style={{ fontSize: 12, color: "var(--cream-dim)" }}>{stripHiddenMarkers(p.titre)}</div>}
           </div>
           <div className="cinzel" style={{ color: "var(--gold)", fontWeight: 700, fontSize: 20 }}>{p.points}</div>
         </div>
@@ -2094,8 +2093,8 @@ function TableauInvestigation({ player }) {
           {selectedNode.image_url && <img src={selectedNode.image_url} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "cover" }} onError={e => e.target.style.display = "none"} />}
           <div style={{ padding: "16px 18px" }}>
             <div style={{ fontSize: 11, color: c.accent, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{c.icon} {selectedNode.type}</div>
-            <div className="cinzel" style={{ fontSize: 22, color: "var(--cream)", marginBottom: 8 }}>{selectedNode.label}</div>
-            {selectedNode.description && <p style={{ color: "var(--cream-dim)", fontSize: 14, lineHeight: 1.7 }}>{selectedNode.description}</p>}
+            <div className="cinzel" style={{ fontSize: 22, color: "var(--cream)", marginBottom: selectedNode.description ? 4 : 0 }}>{selectedNode.label}</div>
+            {selectedNode.description && <div style={{ fontSize: 13, color: c.accent, fontStyle: "italic" }}>"{selectedNode.description}"</div>}
           </div>
         </div>
         {connections.length > 0 && (
@@ -2203,11 +2202,12 @@ function TableauInvestigation({ player }) {
               return (
                 <div key={node.id}
                   onClick={() => setSelectedNode(node)}
-                  style={{ position: "absolute", left: node.pos_x + pan.x, top: node.pos_y + pan.y, width: NODE_W, background: c.bg, border: `2px solid ${c.border}`, borderRadius: 8, padding: "7px 9px", cursor: "pointer", boxShadow: `0 2px 12px rgba(0,0,0,0.5), 0 0 0 0 ${c.border}`, zIndex: 10, transition: "box-shadow 0.2s", userSelect: "none" }}>
+                  style={{ position: "absolute", left: node.pos_x + pan.x, top: node.pos_y + pan.y, width: NODE_W, background: c.bg, border: `2px solid ${c.border}`, borderRadius: 8, padding: "7px 9px", cursor: "pointer", boxShadow: `0 2px 12px rgba(0,0,0,0.5)`, zIndex: 10, transition: "box-shadow 0.2s", userSelect: "none" }}>
                   <div style={{ fontSize: 9, color: c.accent, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{c.icon} {node.type}</div>
-                  {node.image_url && <img src={node.image_url} alt="" style={{ width: "100%", height: 28, objectFit: "cover", borderRadius: 4, marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
+                  {node.image_url && <img src={node.image_url} alt="" style={{ width: "100%", height: 32, objectFit: "cover", borderRadius: 4, marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
                   <div style={{ fontSize: 10, fontWeight: 700, color: "var(--cream)", fontFamily: "Cinzel, serif", lineHeight: 1.3, wordBreak: "break-word" }}>{node.label}</div>
-                  {conns.length > 0 && <div style={{ fontSize: 9, color: c.accent, marginTop: 2 }}>🔗 {conns.length}</div>}
+                  {node.description && <div style={{ fontSize: 9, color: c.accent, fontStyle: "italic", marginTop: 2, lineHeight: 1.2, wordBreak: "break-word" }}>"{node.description}"</div>}
+                  {conns.length > 0 && <div style={{ fontSize: 9, color: c.accent, marginTop: 3 }}>🔗 {conns.length}</div>}
                 </div>
               );
             })}
