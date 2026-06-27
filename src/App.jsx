@@ -17,7 +17,6 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
 
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
@@ -1689,13 +1688,20 @@ function CoffresGlobaux({ player }) {
           .eq("document_id", docId);
 
         for (const trigger of triggersFull || []) {
-          // Le destinataire = cible explicite OU propriétaire de la quête
-          const destId = trigger.target_player_id || trigger.quests?.player_id;
-          // La quête ne s'active QUE si c'est ce joueur qui ouvre le document
-          if (!destId || destId !== player.id) continue;
+          let targetId = null;
+
+          if (trigger.target_player_id) {
+            // Trigger AVEC cible : seulement si c'est cette personne qui ouvre
+            if (trigger.target_player_id !== player.id) continue;
+            targetId = player.id;
+          } else {
+            // Trigger SANS cible : envoie au propriétaire de la quête, peu importe qui ouvre
+            targetId = trigger.quests?.player_id;
+            if (!targetId) continue;
+          }
 
           const { error } = await supabase.from("quest_activations").insert({
-            player_id: player.id,
+            player_id: targetId,
             quest_id: trigger.quest_id,
             triggered_by_document: docId,
             seen: false,
