@@ -14,9 +14,8 @@ import { createClient } from "@supabase/supabase-js";
 // ============================================================
 // CONFIGURATION - À MODIFIER
 // ============================================================
-const SUPABASE_URL = "https://uqgjiwmsmptchedrrxcq.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZ2ppd21zbXB0Y2hlZHJyeGNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMjU4ODYsImV4cCI6MjA5NzkwMTg4Nn0.B5Wef4IvN5Vzkl2UnZtIso-Z_slZpVXph85NnJV5vPA";
-
+const SUPABASE_URL = "https://VOTRE_PROJET.supabase.co";
+const SUPABASE_ANON_KEY = "VOTRE_ANON_KEY";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -1988,30 +1987,67 @@ function TableauInvestigation({ player }) {
   const [noeuds, setNoeuds] = useState([]);
   const [liens, setLiens] = useState([]);
   const [unlockedDocs, setUnlockedDocs] = useState(new Set());
-  const [unlockedPersonnages, setUnlockedPersonnages] = useState(new Set());
+  const [fullyDiscoveredPlayers, setFullyDiscoveredPlayers] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState(null);
-  const [filter, setFilter] = useState("tous");
+  const [viewMode, setViewMode] = useState("canvas"); // "canvas" | "list"
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const containerRef = useRef(null);
+  const NODE_W = 110, NODE_H = 64;
 
   const load = useCallback(async () => {
-    const [{ data: n }, { data: l }, { data: rec }, { data: disc }] = await Promise.all([
+    const [{ data: n }, { data: l }, { data: rec }, { data: disc }, { data: allUsers }] = await Promise.all([
       supabase.from("tableau_noeuds").select("*"),
       supabase.from("tableau_liens").select("*"),
       supabase.from("coffre_receptions").select("document_id").eq("player_id", player.id),
-      supabase.from("discoveries").select("target_player_id").eq("investigator_id", player.id),
+      supabase.from("discoveries").select("target_player_id, field_type, word_index").eq("investigator_id", player.id),
+      supabase.from("users").select("id, nom, titre, surnom, bio"),
     ]);
+
     setNoeuds(n || []);
     setLiens(l || []);
     setUnlockedDocs(new Set((rec || []).map(r => r.document_id)));
-    // Un personnage est déverrouillé dès qu'on a trouvé au moins un mot sur sa fiche
-    setUnlockedPersonnages(new Set((disc || []).map(d => d.target_player_id)));
+
+    // Calculer quels joueurs ont TOUS leurs mots cachés découverts
+    // On récupère aussi les character_descriptions pour compter les mots cachés
+    const { data: descs } = await supabase.from("character_descriptions").select("user_id, texte");
+
+    const countHiddenWords = (text) => {
+      if (!text) return 0;
+      return (text.match(/%[^%]+%/g) || []).length;
+    };
+
+    const fullyDiscovered = new Set();
+    (allUsers || []).forEach(u => {
+      // Compter tous les mots cachés de ce joueur
+      const totalWords =
+        countHiddenWords(u.nom) +
+        countHiddenWords(u.titre) +
+        countHiddenWords(u.surnom) +
+        countHiddenWords(u.bio) +
+        (descs || []).filter(d => d.user_id === u.id).reduce((acc, d) => acc + countHiddenWords(d.texte), 0);
+
+      if (totalWords === 0) {
+        // Pas de mots cachés = visible dès qu'on a au moins une découverte sur ce joueur
+        const hasAny = (disc || []).some(d => d.target_player_id === u.id);
+        if (hasAny) fullyDiscovered.add(u.id);
+      } else {
+        // Compter les découvertes pour ce joueur
+        const discovered = (disc || []).filter(d => d.target_player_id === u.id).length;
+        if (discovered >= totalWords) fullyDiscovered.add(u.id);
+      }
+    });
+
+    setFullyDiscoveredPlayers(fullyDiscovered);
     setLoading(false);
   }, [player.id]);
 
   useEffect(() => { load(); }, [load]);
 
   const isUnlocked = (node) => {
-    if (node.type === "personnage" && node.player_id) return unlockedPersonnages.has(node.player_id);
+    if (node.type === "personnage" && node.player_id) return fullyDiscoveredPlayers.has(node.player_id);
     return !node.document_id || unlockedDocs.has(node.document_id);
   };
   const isLienUnlocked = (lien) => !lien.document_id || unlockedDocs.has(lien.document_id);
@@ -2022,11 +2058,25 @@ function TableauInvestigation({ player }) {
     const tgt = noeuds.find(n => n.id === l.noeud_cible);
     return src && tgt && isUnlocked(src) && isUnlocked(tgt) && isLienUnlocked(l);
   });
+
   const getConnections = (nodeId) => visibleLiens.filter(l => l.noeud_source === nodeId || l.noeud_cible === nodeId);
-  const filteredNoeuds = filter === "tous" ? visibleNoeuds : visibleNoeuds.filter(n => n.type === filter);
+
+  // Pan handlers (read-only canvas)
+  const onBgMouseDown = (e) => {
+    setIsPanning(true);
+    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+  const onMouseMove = (e) => {
+    if (!isPanning) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    setPan({ x: clientX - panStart.x, y: clientY - panStart.y });
+  };
+  const onMouseUp = () => setIsPanning(false);
 
   if (loading) return <div className="loading">Chargement du tableau...</div>;
 
+  // Vue détail nœud
   if (selectedNode) {
     const c = NODE_COLORS[selectedNode.type] || NODE_COLORS.personnage;
     const connections = getConnections(selectedNode.id);
@@ -2071,79 +2121,175 @@ function TableauInvestigation({ player }) {
 
   return (
     <div className="fade-in">
-      <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <div style={{ fontSize: 32, marginBottom: 4 }}>🕵️</div>
-        <div className="cinzel gold" style={{ fontSize: 18, marginBottom: 8 }}>Tableau d'enquête</div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-          <span className="badge badge-gold">🔓 {visibleNoeuds.length} révélés</span>
-          <span className="badge badge-blood">🔗 {visibleLiens.length} connexions</span>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div>
+          <div className="cinzel gold" style={{ fontSize: 16 }}>🕵️ Tableau d'enquête</div>
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            <span className="badge badge-gold" style={{ fontSize: 11 }}>🔓 {visibleNoeuds.length} révélés</span>
+            <span className="badge badge-blood" style={{ fontSize: 11 }}>🔗 {visibleLiens.length} liens</span>
+            <span className="badge badge-muted" style={{ fontSize: 11 }}>🔒 {noeuds.length - visibleNoeuds.length} cachés</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className={`btn btn-sm ${viewMode === "canvas" ? "btn-gold" : "btn-ghost"}`} onClick={() => setViewMode("canvas")}>🗺</button>
+          <button className={`btn btn-sm ${viewMode === "list" ? "btn-gold" : "btn-ghost"}`} onClick={() => setViewMode("list")}>📋</button>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
-        {["tous", "personnage", "lieu", "objet", "evenement"].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`btn btn-sm ${filter === f ? "btn-gold" : "btn-ghost"}`}
-            style={{ whiteSpace: "nowrap", flexShrink: 0, fontSize: 12 }}>
-            {f === "tous" ? "Tous" : `${NODE_COLORS[f]?.icon} ${f.charAt(0).toUpperCase() + f.slice(1)}`}
-          </button>
-        ))}
-      </div>
-      {visibleLiens.length > 0 && filter === "tous" && (
-        <div style={{ marginBottom: 20 }}>
-          <div className="cinzel" style={{ color: "var(--blood-bright)", fontSize: 13, marginBottom: 10 }}>🔴 Connexions découvertes</div>
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-            {visibleLiens.map((lien, i) => {
-              const src = noeuds.find(n => n.id === lien.noeud_source);
-              const tgt = noeuds.find(n => n.id === lien.noeud_cible);
-              if (!src || !tgt) return null;
+
+      {/* CANVAS VIEW */}
+      {viewMode === "canvas" && (
+        <>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Glissez le fond pour naviguer • Tapez un nœud pour voir le détail</div>
+          <div
+            ref={containerRef}
+            style={{ position: "relative", width: "100%", height: 460, background: "#06060A", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden", cursor: isPanning ? "grabbing" : "grab", userSelect: "none", touchAction: "none" }}
+            onMouseDown={onBgMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            onTouchStart={e => { setIsPanning(true); setPanStart({ x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y }); }}
+            onTouchMove={e => { if (!isPanning) return; setPan({ x: e.touches[0].clientX - panStart.x, y: e.touches[0].clientY - panStart.y }); }}
+            onTouchEnd={onMouseUp}
+          >
+            {/* Grille */}
+            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+              <defs>
+                <pattern id="playergrid" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform={`translate(${pan.x % 40},${pan.y % 40})`}>
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#111118" strokeWidth="0.5" />
+                </pattern>
+                <marker id="playerarrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#8B1A1A" />
+                </marker>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#playergrid)" />
+
+              {/* Fils visibles */}
+              {visibleLiens.map(lien => {
+                const src = noeuds.find(n => n.id === lien.noeud_source);
+                const tgt = noeuds.find(n => n.id === lien.noeud_cible);
+                if (!src || !tgt) return null;
+                const x1 = src.pos_x + pan.x + NODE_W / 2, y1 = src.pos_y + pan.y + NODE_H / 2;
+                const x2 = tgt.pos_x + pan.x + NODE_W / 2, y2 = tgt.pos_y + pan.y + NODE_H / 2;
+                const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+                const color = lien.couleur || "#8B1A1A";
+                return (
+                  <g key={lien.id}>
+                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth="2" markerEnd="url(#playerarrow)" opacity="0.9" />
+                    {lien.label && (
+                      <g>
+                        <rect x={mx - lien.label.length * 3.5} y={my - 10} width={lien.label.length * 7 + 8} height={18} rx="4" fill="#0D0D14" opacity="0.95" />
+                        <text x={mx} y={my + 4} textAnchor="middle" fill={color} fontSize="10" fontFamily="Cinzel, serif">{lien.label}</text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
+
+              {/* Fils verrouillés — invisibles, on ne les montre pas du tout */}
+            </svg>
+
+            {/* Nœuds visibles */}
+            {visibleNoeuds.map(node => {
+              const c = NODE_COLORS[node.type] || NODE_COLORS.personnage;
+              const conns = getConnections(node.id);
               return (
-                <div key={lien.id} style={{ padding: "10px 14px", borderBottom: i < visibleLiens.length - 1 ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: lien.couleur || "#8B1A1A", flexShrink: 0 }} />
-                  <div style={{ fontSize: 13, flex: 1 }}>
-                    <span style={{ fontWeight: 500 }}>{src.label}</span>
-                    {lien.label && <span style={{ color: lien.couleur || "var(--blood-bright)", fontStyle: "italic", margin: "0 6px" }}>"{lien.label}"</span>}
-                    <span style={{ fontWeight: 500 }}>{tgt.label}</span>
-                  </div>
+                <div key={node.id}
+                  onClick={() => setSelectedNode(node)}
+                  style={{ position: "absolute", left: node.pos_x + pan.x, top: node.pos_y + pan.y, width: NODE_W, background: c.bg, border: `2px solid ${c.border}`, borderRadius: 8, padding: "7px 9px", cursor: "pointer", boxShadow: `0 2px 12px rgba(0,0,0,0.5), 0 0 0 0 ${c.border}`, zIndex: 10, transition: "box-shadow 0.2s", userSelect: "none" }}>
+                  <div style={{ fontSize: 9, color: c.accent, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{c.icon} {node.type}</div>
+                  {node.image_url && <img src={node.image_url} alt="" style={{ width: "100%", height: 28, objectFit: "cover", borderRadius: 4, marginBottom: 3 }} onError={e => e.target.style.display = "none"} />}
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--cream)", fontFamily: "Cinzel, serif", lineHeight: 1.3, wordBreak: "break-word" }}>{node.label}</div>
+                  {conns.length > 0 && <div style={{ fontSize: 9, color: c.accent, marginTop: 2 }}>🔗 {conns.length}</div>}
                 </div>
               );
             })}
-          </div>
-        </div>
-      )}
-      {filteredNoeuds.length === 0 && (
-        <div className="empty-state"><div className="icon">🔍</div><p>Aucun élément révélé.<br />Continuez votre enquête !</p></div>
-      )}
-      {filteredNoeuds.map(node => {
-        const c = NODE_COLORS[node.type] || NODE_COLORS.personnage;
-        const connections = getConnections(node.id);
-        return (
-          <div key={node.id} onClick={() => setSelectedNode(node)}
-            style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, marginBottom: 12, overflow: "hidden", cursor: "pointer" }}>
-            <div style={{ display: "flex", gap: 12, padding: "14px 16px", alignItems: "center" }}>
-              {node.image_url
-                ? <img src={node.image_url} alt="" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} onError={e => e.target.style.display = "none"} />
-                : <div style={{ width: 52, height: 52, borderRadius: 8, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>{c.icon}</div>
-              }
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 10, color: c.accent, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>{c.icon} {node.type}</div>
-                <div className="cinzel" style={{ fontSize: 15, color: "var(--cream)", fontWeight: 600, marginBottom: 2 }}>{node.label}</div>
-                {node.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.description}</div>}
+
+            {/* Empty state */}
+            {noeuds.length === 0 && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>🔍</div>
+                <div className="cinzel" style={{ fontSize: 13 }}>Aucun élément révélé</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>Continuez votre enquête !</div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, gap: 2 }}>
-                {connections.length > 0 && <span className="badge" style={{ background: `${c.border}33`, color: c.accent, border: `1px solid ${c.border}`, fontSize: 11 }}>🔗 {connections.length}</span>}
-                <span style={{ color: "var(--muted)", fontSize: 18 }}>›</span>
+            )}
+            {noeuds.length > 0 && visibleNoeuds.length === 0 && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+                <div className="cinzel" style={{ fontSize: 13 }}>Tableau encore vierge</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>Découvrez des indices pour révéler les connexions</div>
+              </div>
+            )}
+          </div>
+
+          {/* Légende */}
+          <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+            {Object.entries(NODE_COLORS).map(([type, c]) => (
+              <span key={type} style={{ fontSize: 11, color: "var(--cream-dim)", display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: c.border, display: "inline-block" }} />
+                {c.icon} {type}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* LIST VIEW */}
+      {viewMode === "list" && (
+        <div>
+          {visibleLiens.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="cinzel" style={{ color: "var(--blood-bright)", fontSize: 13, marginBottom: 8 }}>🔴 Connexions découvertes</div>
+              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                {visibleLiens.map((lien, i) => {
+                  const src = noeuds.find(n => n.id === lien.noeud_source);
+                  const tgt = noeuds.find(n => n.id === lien.noeud_cible);
+                  if (!src || !tgt) return null;
+                  return (
+                    <div key={lien.id} style={{ padding: "10px 14px", borderBottom: i < visibleLiens.length - 1 ? "1px solid var(--border)" : "none", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: lien.couleur || "#8B1A1A", flexShrink: 0 }} />
+                      <div style={{ fontSize: 13, flex: 1 }}>
+                        <span style={{ fontWeight: 500 }}>{src.label}</span>
+                        {lien.label && <span style={{ color: lien.couleur || "var(--blood-bright)", fontStyle: "italic", margin: "0 6px" }}>"{lien.label}"</span>}
+                        <span style={{ fontWeight: 500 }}>{tgt.label}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          </div>
-        );
-      })}
+          )}
+          {visibleNoeuds.length === 0 && <div className="empty-state"><div className="icon">🔍</div><p>Aucun élément révélé.<br />Continuez votre enquête !</p></div>}
+          {visibleNoeuds.map(node => {
+            const c = NODE_COLORS[node.type] || NODE_COLORS.personnage;
+            const connections = getConnections(node.id);
+            return (
+              <div key={node.id} onClick={() => setSelectedNode(node)}
+                style={{ background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, marginBottom: 10, overflow: "hidden", cursor: "pointer" }}>
+                <div style={{ display: "flex", gap: 12, padding: "12px 14px", alignItems: "center" }}>
+                  {node.image_url
+                    ? <img src={node.image_url} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} onError={e => e.target.style.display = "none"} />
+                    : <div style={{ width: 48, height: 48, borderRadius: 8, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{c.icon}</div>
+                  }
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, color: c.accent, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>{c.icon} {node.type}</div>
+                    <div className="cinzel" style={{ fontSize: 14, color: "var(--cream)", fontWeight: 600 }}>{node.label}</div>
+                    {node.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.description}</div>}
+                  </div>
+                  <div style={{ flexShrink: 0 }}>
+                    {connections.length > 0 && <span className="badge" style={{ background: `${c.border}33`, color: c.accent, border: `1px solid ${c.border}`, fontSize: 11 }}>🔗 {connections.length}</span>}
+                    <span style={{ color: "var(--muted)", fontSize: 18, marginLeft: 4 }}>›</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// ============================================================
-// ADMIN - TABLEAU (drag & drop canvas)
-// ============================================================
 function AdminTableau({ toast }) {
   const [noeuds, setNoeuds] = useState([]);
   const [liens, setLiens] = useState([]);
