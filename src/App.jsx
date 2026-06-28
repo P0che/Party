@@ -1022,20 +1022,14 @@ function AdminValidations({ toast }) {
         .eq("source_quest_id", val.quest_id);
 
       for (const trigger of triggers || []) {
-        // Même logique que les triggers de documents :
-        // Avec cible → seulement si c'est cette personne qui a validé
-        // Sans cible → propriétaire de la quête cible
-        let targetId = null;
-        if (trigger.target_player_id) {
-          if (trigger.target_player_id !== val.player_id) continue;
-          targetId = val.player_id;
-        } else {
-          targetId = trigger.target_quest?.player_id;
-          if (!targetId) continue;
-        }
-        // Activer la quête cible
+        // Trigger AVEC cible → active pour ce joueur précis
+        // Trigger SANS cible → active pour le propriétaire de la quête cible
+        const targetId = trigger.target_player_id || trigger.target_quest?.player_id;
+        if (!targetId) continue;
+
+        // Passer la quête cible de Off → On
         await supabase.from("quests").update({ active: true }).eq("id", trigger.target_quest_id);
-        // Notifier
+        // Notifier le joueur
         await supabase.from("quest_activations").upsert({
           player_id: targetId,
           quest_id: trigger.target_quest_id,
