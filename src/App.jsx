@@ -848,8 +848,10 @@ function AdminPlayers({ toast }) {
 function AdminQuests({ toast }) {
   const [quests, setQuests] = useState([]);
   const [players, setPlayers] = useState([]);
+  const [triggers, setTriggers] = useState({}); // questId → triggers[]
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
+  const [triggerModal, setTriggerModal] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -861,6 +863,13 @@ function AdminQuests({ toast }) {
     setPlayers(ps || []);
     setLoading(false);
   }, []);
+
+  const loadTriggers = async (questId) => {
+    const { data } = await supabase.from("quest_validation_triggers")
+      .select("*, target_quest:target_quest_id(titre, type), users(nom)")
+      .eq("source_quest_id", questId);
+    setTriggers(t => ({ ...t, [questId]: data || [] }));
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -876,6 +885,23 @@ function AdminQuests({ toast }) {
     load();
   };
 
+  const saveTrigger = async (sourceQuestId, targetQuestId, targetPlayerId) => {
+    await supabase.from("quest_validation_triggers").insert({
+      source_quest_id: sourceQuestId,
+      target_quest_id: targetQuestId,
+      target_player_id: targetPlayerId || null,
+    });
+    loadTriggers(sourceQuestId);
+    setTriggerModal(null);
+    toast.show("Déclencheur ajouté ✓", "success");
+  };
+
+  const deleteTrigger = async (triggerId, questId) => {
+    await supabase.from("quest_validation_triggers").delete().eq("id", triggerId);
+    loadTriggers(questId);
+    toast.show("Déclencheur supprimé", "success");
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -885,57 +911,77 @@ function AdminQuests({ toast }) {
         </button>
       </div>
       {loading ? <div className="loading">Chargement...</div> : (
-        <div className="card">
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Quête</th>
-                  <th>Type</th>
-                  <th>Assignée à</th>
-                  <th>Statut</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {quests.map(q => (
-                  <tr key={q.id}>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{q.titre}</div>
-                      {q.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", marginTop: 2 }}>{q.description.slice(0, 60)}{q.description.length > 60 ? "…" : ""}</div>}
-                    </td>
-                    <td>
-                      <span className={`badge ${q.type === "principale" ? "badge-blood" : q.type === "sabotage" ? "badge-blood" : "badge-muted"}`}
-                        style={q.type === "sabotage" ? { background: "rgba(180,0,0,0.2)", color: "#FF3333", border: "1px solid #CC0000" } : {}}>
-                        {q.type === "principale" ? "⚔ Principale" : q.type === "sabotage" ? "💀 Sabotage" : "📜 Secondaire"}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: 13, color: q.player_id ? "var(--gold)" : "var(--muted)" }}>
-                      {q.users?.nom || "Tous"}
-                    </td>
-                    <td>
-                      <label className="toggle" style={{ display: "inline-block" }}>
-                        <input type="checkbox" checked={q.active} onChange={() => toggle(q)} />
-                        <span className="toggle-slider" />
-                      </label>
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "edit", quest: q })}><Icons.Edit /> Modifier</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => deleteQuest(q.id)}><Icons.Trash /> Supprimer</button>
-                      </div>
-                    </td>
-                  </tr>
+        <div>
+          {quests.map(q => (
+            <div key={q.id} className="card" style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{q.titre}</div>
+                  {q.description && <div style={{ fontSize: 12, color: "var(--cream-dim)", marginTop: 2 }}>{q.description.slice(0, 60)}{q.description.length > 60 ? "…" : ""}</div>}
+                  <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span className={`badge ${q.type === "sabotage" ? "" : q.type === "principale" ? "badge-blood" : "badge-muted"}`}
+                      style={q.type === "sabotage" ? { background: "rgba(180,0,0,0.2)", color: "#FF3333", border: "1px solid #CC0000" } : {}}>
+                      {q.type === "principale" ? "⚔ Principale" : q.type === "sabotage" ? "💀 Sabotage" : "📜 Secondaire"}
+                    </span>
+                    <span style={{ fontSize: 12, color: q.player_id ? "var(--gold)" : "var(--muted)" }}>{q.users?.nom || "Tous"}</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                  <label className="toggle">
+                    <input type="checkbox" checked={q.active} onChange={() => toggle(q)} />
+                    <span className="toggle-slider" />
+                  </label>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setModal({ type: "edit", quest: q })}><Icons.Edit /></button>
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteQuest(q.id)}><Icons.Trash /></button>
+                </div>
+              </div>
+              {/* Déclencheurs */}
+              <div style={{ marginTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    ⚡ Si validée → active ({(triggers[q.id] || []).length})
+                  </span>
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "3px 8px" }}
+                    onClick={() => { loadTriggers(q.id); setTriggerModal({ sourceQuestId: q.id, sourceTitle: q.titre }); }}>
+                    <Icons.Plus /> Ajouter
+                  </button>
+                </div>
+                {triggers[q.id] === undefined ? (
+                  <span style={{ fontSize: 11, color: "var(--muted)", cursor: "pointer" }} onClick={() => loadTriggers(q.id)}>▶ Voir les déclencheurs</span>
+                ) : (triggers[q.id] || []).length === 0 ? (
+                  <p style={{ fontSize: 11, color: "var(--muted)" }}>Aucun déclencheur</p>
+                ) : (triggers[q.id] || []).map(t => (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, fontSize: 12 }}>
+                    <span style={{ color: t.target_quest?.type === "sabotage" ? "#FF3333" : t.target_quest?.type === "principale" ? "var(--blood-bright)" : "var(--cream-dim)" }}>
+                      {t.target_quest?.type === "sabotage" ? "💀" : t.target_quest?.type === "principale" ? "⚔" : "📜"} {t.target_quest?.titre}
+                    </span>
+                    <span style={{ color: "var(--muted)" }}>→</span>
+                    <span style={{ color: "var(--gold)", fontSize: 11 }}>{t.users?.nom || "Propriétaire quête cible"}</span>
+                    <button className="btn btn-danger btn-sm btn-icon" style={{ padding: "2px 5px", marginLeft: "auto" }} onClick={() => deleteTrigger(t.id, q.id)}>
+                      <Icons.X />
+                    </button>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-            {quests.length === 0 && <div className="empty-state"><div className="icon">📜</div><p>Aucune quête créée</p></div>}
-          </div>
+              </div>
+            </div>
+          ))}
+          {quests.length === 0 && <div className="empty-state"><div className="icon">📜</div><p>Aucune quête créée</p></div>}
         </div>
       )}
       {modal && (
         <Modal title={modal.type === "add" ? "Nouvelle quête" : "Modifier la quête"} onClose={() => setModal(null)}>
           <QuestForm quest={modal.quest} players={players} onSave={() => { setModal(null); load(); toast.show("Quête enregistrée ✓", "success"); }} onClose={() => setModal(null)} />
+        </Modal>
+      )}
+      {triggerModal && (
+        <Modal title={`Déclencheur — ${triggerModal.sourceTitle}`} onClose={() => setTriggerModal(null)}>
+          <TriggerForm
+            quests={quests.filter(q => q.id !== triggerModal.sourceQuestId)}
+            players={players}
+            onSave={(questId, playerId) => saveTrigger(triggerModal.sourceQuestId, questId, playerId)}
+            onClose={() => setTriggerModal(null)}
+            label="Quête à activer quand cette quête est validée"
+          />
         </Modal>
       )}
     </div>
@@ -965,11 +1011,38 @@ function AdminValidations({ toast }) {
   const handle = async (val, approve) => {
     if (approve) {
       const pts = val.quests.type === "principale" ? 10 : val.quests.type === "sabotage" ? 15 : 5;
-      await supabase.from("users").update({ points: supabase.rpc ? undefined : undefined }).eq("id", val.player_id);
-      // Increment points
       const { data: user } = await supabase.from("users").select("points").eq("id", val.player_id).single();
       await supabase.from("users").update({ points: (user?.points || 0) + pts }).eq("id", val.player_id);
       await supabase.from("quest_validations").update({ status: "approved" }).eq("id", val.id);
+
+      // Déclencher les triggers liés à cette quête validée
+      const { data: triggers } = await supabase
+        .from("quest_validation_triggers")
+        .select("*, target_quest:target_quest_id(id, player_id, titre)")
+        .eq("source_quest_id", val.quest_id);
+
+      for (const trigger of triggers || []) {
+        // Même logique que les triggers de documents :
+        // Avec cible → seulement si c'est cette personne qui a validé
+        // Sans cible → propriétaire de la quête cible
+        let targetId = null;
+        if (trigger.target_player_id) {
+          if (trigger.target_player_id !== val.player_id) continue;
+          targetId = val.player_id;
+        } else {
+          targetId = trigger.target_quest?.player_id;
+          if (!targetId) continue;
+        }
+        // Activer la quête cible
+        await supabase.from("quests").update({ active: true }).eq("id", trigger.target_quest_id);
+        // Notifier
+        await supabase.from("quest_activations").upsert({
+          player_id: targetId,
+          quest_id: trigger.target_quest_id,
+          seen: false,
+        }, { onConflict: "player_id,quest_id" });
+      }
+
       toast.show(`+${pts} points attribués à ${val.users.nom} ✓`, "gold");
     } else {
       await supabase.from("quest_validations").update({ status: "rejected" }).eq("id", val.id);
@@ -2085,7 +2158,7 @@ function CoffreForm({ coffre, onSave, onClose }) {
   );
 }
 
-function TriggerForm({ quests, players, onSave, onClose }) {
+function TriggerForm({ quests, players, onSave, onClose, label }) {
   const [questId, setQuestId] = useState("");
   const [targetId, setTargetId] = useState("");
   const { show, ToastEl } = useToast();
@@ -2097,7 +2170,7 @@ function TriggerForm({ quests, players, onSave, onClose }) {
     <>
       {ToastEl}
       <p style={{ fontSize: 13, color: "var(--cream-dim)", marginBottom: 16 }}>
-        Quand ce document est découvert, la quête sélectionnée sera automatiquement activée pour le joueur cible (ou pour celui qui trouve le document si aucun cible n'est choisi).
+        {label || "Quand ce document est découvert, la quête sélectionnée sera automatiquement activée."}
       </p>
       <div className="form-group">
         <label className="label">Quête à activer *</label>
@@ -2111,9 +2184,9 @@ function TriggerForm({ quests, players, onSave, onClose }) {
         </select>
       </div>
       <div className="form-group">
-        <label className="label">Joueur cible <span style={{ color: "var(--muted)", fontSize: 11 }}>(vide = activée pour celui qui trouve le document)</span></label>
+        <label className="label">Joueur cible <span style={{ color: "var(--muted)", fontSize: 11 }}>(vide = propriétaire de la quête cible)</span></label>
         <select className="input" value={targetId} onChange={e => setTargetId(e.target.value)}>
-          <option value="">— Celui qui trouve le document —</option>
+          <option value="">— Propriétaire de la quête —</option>
           {players.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
         </select>
       </div>
