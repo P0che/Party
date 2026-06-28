@@ -95,7 +95,7 @@ const GLOBAL_CSS = `
   /* Layout */
   .app { min-height: 100vh; display: flex; flex-direction: column; }
   
-  .page { flex: 1; padding: 20px; max-width: 900px; margin: 0 auto; width: 100%; padding-bottom: 80px; }
+  .page { flex: 1; padding: 20px; max-width: 900px; margin: 0 auto; width: 100%; padding-bottom: 90px; }
   
   /* Boutons */
   .btn {
@@ -168,17 +168,25 @@ const GLOBAL_CSS = `
   .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--bg-surface); border-top: 1px solid var(--border);
-    display: flex; padding: 8px 0 env(safe-area-inset-bottom, 8px);
+    display: flex; overflow-x: auto; overflow-y: hidden;
+    padding: 4px 0 env(safe-area-inset-bottom, 4px);
     z-index: 100;
+    scrollbar-width: none; -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
   }
+  .bottom-nav::-webkit-scrollbar { display: none; }
   .nav-item {
-    flex: 1; display: flex; flex-direction: column; align-items: center;
-    gap: 3px; padding: 6px; cursor: pointer; border: none; background: none;
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
+    gap: 2px; padding: 6px 14px; cursor: pointer; border: none; background: none;
     color: var(--muted); font-size: 10px; font-family: 'Inter', sans-serif;
     transition: color 0.2s; text-transform: uppercase; letter-spacing: 0.5px;
+    white-space: nowrap; min-width: 64px;
   }
-  .nav-item.active { color: var(--gold); }
-  .nav-item svg { width: 22px; height: 22px; }
+  .nav-item.active { color: var(--gold); position: relative; }
+  .nav-item.active::after { content: ''; position: absolute; top: 0; left: 20%; right: 20%; height: 2px; background: var(--gold); border-radius: 0 0 2px 2px; }
+  .nav-item svg { width: 20px; height: 20px; }
+  .bottom-nav-wrap { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; }
+  .bottom-nav-wrap::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 32px; background: linear-gradient(to left, var(--bg-surface), transparent); pointer-events: none; }
 
   /* Header admin */
   .admin-header {
@@ -3085,14 +3093,16 @@ function PlayerDashboard({ player: initialPlayer, onLogout }) {
         {tab === "investigate" && <PlayerInvestigate player={player} allowSelf={settings.allow_self_investigation} />}
         {tab === "settings_player" && <PlayerSettings player={player} />}
       </div>
-      <nav className="bottom-nav">
-        {tabs.map(t => (
-          <button key={t.id} className={`nav-item ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
-            {t.icon}
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="bottom-nav-wrap">
+        <nav className="bottom-nav">
+          {tabs.map(t => (
+            <button key={t.id} className={`nav-item ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
     </div>
   );
 }
