@@ -1018,23 +1018,35 @@ function AdminValidations({ toast }) {
       // Déclencher les triggers liés à cette quête validée
       const { data: triggers } = await supabase
         .from("quest_validation_triggers")
-        .select("*, target_quest:target_quest_id(id, player_id, titre)")
+        .select("*")
         .eq("source_quest_id", val.quest_id);
 
       for (const trigger of triggers || []) {
-        // Trigger AVEC cible → active pour ce joueur précis
-        // Trigger SANS cible → active pour le propriétaire de la quête cible
-        const targetId = trigger.target_player_id || trigger.target_quest?.player_id;
-        if (!targetId) continue;
+        // Récupérer la quête cible pour avoir son player_id
+        const { data: targetQuest } = await supabase
+          .from("quests")
+          .select("id, player_id")
+          .eq("id", trigger.target_quest_id)
+          .single();
+
+        const targetId = trigger.target_player_id || targetQuest?.player_id;
 
         // Passer la quête cible de Off → On
-        await supabase.from("quests").update({ active: true }).eq("id", trigger.target_quest_id);
-        // Notifier le joueur
-        await supabase.from("quest_activations").upsert({
-          player_id: targetId,
-          quest_id: trigger.target_quest_id,
-          seen: false,
-        }, { onConflict: "player_id,quest_id" });
+        const { error: updateError } = await supabase
+          .from("quests")
+          .update({ active: true })
+          .eq("id", trigger.target_quest_id);
+
+        if (updateError) console.error("Erreur activation quête:", updateError);
+
+        // Notifier le joueur si destinataire connu
+        if (targetId) {
+          await supabase.from("quest_activations").upsert({
+            player_id: targetId,
+            quest_id: trigger.target_quest_id,
+            seen: false,
+          }, { onConflict: "player_id,quest_id" });
+        }
       }
 
       toast.show(`+${pts} points attribués à ${val.users.nom} ✓`, "gold");
